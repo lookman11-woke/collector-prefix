@@ -20,10 +20,11 @@ CREATE TABLE IF NOT EXISTS collector_db.flows_raw (
     bytes          UInt64,
     packets        UInt64,
     is_inbound     UInt8,
-    isp_prefix     LowCardinality(String)
+    isp_prefix     LowCardinality(String),
+    isp_asn        LowCardinality(String)
 ) ENGINE = MergeTree()
 PARTITION BY toDate(timestamp)
-ORDER BY (is_inbound, interface_name, isp_prefix, timestamp)
+ORDER BY (isp_asn, is_inbound, interface_name, isp_prefix, timestamp)
 TTL timestamp + INTERVAL 7 DAY
 SETTINGS index_granularity = 8192;
 
@@ -32,12 +33,13 @@ CREATE TABLE IF NOT EXISTS collector_db.flows_1m_by_prefix_and_iface (
     time_bucket    DateTime,
     interface_name LowCardinality(String),
     isp_prefix     LowCardinality(String),
+    isp_asn        LowCardinality(String),
     is_inbound     UInt8,
     total_bytes    SimpleAggregateFunction(sum, UInt64),
     total_packets  SimpleAggregateFunction(sum, UInt64)
 ) ENGINE = AggregatingMergeTree()
 PARTITION BY toDate(time_bucket)
-ORDER BY (is_inbound, interface_name, isp_prefix, time_bucket)
+ORDER BY (isp_asn, is_inbound, interface_name, isp_prefix, time_bucket)
 TTL time_bucket + INTERVAL 30 DAY
 SETTINGS index_granularity = 8192;
 
@@ -48,11 +50,12 @@ SELECT
     toStartOfInterval(timestamp, INTERVAL 1 MINUTE) AS time_bucket,
     interface_name,
     isp_prefix,
+    isp_asn,
     is_inbound,
     sum(bytes)   AS total_bytes,
     sum(packets) AS total_packets
 FROM collector_db.flows_raw
-GROUP BY time_bucket, interface_name, isp_prefix, is_inbound;
+GROUP BY time_bucket, interface_name, isp_prefix, isp_asn, is_inbound;
 
 -- 5. 5-minute ASN flow matrix target table (1-year TTL)
 CREATE TABLE IF NOT EXISTS collector_db.flows_5m_asn_matrix (
@@ -61,11 +64,12 @@ CREATE TABLE IF NOT EXISTS collector_db.flows_5m_asn_matrix (
     src_asn        UInt32,
     dst_asn        UInt32,
     isp_prefix     LowCardinality(String),
+    isp_asn        LowCardinality(String),
     is_inbound     UInt8,
     total_bytes    SimpleAggregateFunction(sum, UInt64)
 ) ENGINE = AggregatingMergeTree()
 PARTITION BY toDate(time_bucket)
-ORDER BY (is_inbound, interface_name, src_asn, dst_asn, time_bucket)
+ORDER BY (isp_asn, is_inbound, interface_name, src_asn, dst_asn, time_bucket)
 TTL time_bucket + INTERVAL 365 DAY
 SETTINGS index_granularity = 8192;
 
@@ -78,7 +82,8 @@ SELECT
     src_asn,
     dst_asn,
     isp_prefix,
+    isp_asn,
     is_inbound,
     sum(bytes) AS total_bytes
 FROM collector_db.flows_raw
-GROUP BY time_bucket, interface_name, src_asn, dst_asn, isp_prefix, is_inbound;
+GROUP BY time_bucket, interface_name, src_asn, dst_asn, isp_prefix, isp_asn, is_inbound;
