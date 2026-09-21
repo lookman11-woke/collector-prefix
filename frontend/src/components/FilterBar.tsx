@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { formatBps, type PrefixNode, type ASNPrefixGroup, type Interface } from '../data/mock'
+import type { PrefixNode, ASNPrefixGroup, Interface } from '../data/mock'
 
 function getNodeCidrs(node: PrefixNode): string[] {
   const list = [node.cidr]
@@ -137,11 +137,6 @@ function PrefixTreeNode({
         >
           {node.cidr}
         </span>
-
-        <div className="shrink-0 font-mono text-[10px] text-right leading-tight ml-2">
-          <span className="text-[#FF4D4D] mr-1.5">↓{formatBps(node.inbound_bps, 1)}</span>
-          <span className="text-[#FFCE00]">↑{formatBps(node.outbound_bps, 1)}</span>
-        </div>
       </div>
 
       {expanded && hasChildren && (
@@ -448,27 +443,24 @@ export default function FilterBar({
                             type="button"
                             key={iface.id}
                             onClick={() => onToggleInterface(iface.id)}
-                            className={`w-full flex items-center justify-between p-1.5 rounded-lg text-left transition-colors ${
+                            className={`w-full flex items-center gap-2 p-1.5 rounded-lg text-left transition-colors ${
                               isSelected ? 'bg-[#E41919]/15 border border-[#E41919]/40' : 'bg-[#0B0F17]/50 border border-[#242E42]/50 hover:border-slate-600'
                             }`}
                           >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="w-3.5 h-3.5 rounded flex items-center justify-center shrink-0"
-                                style={{
-                                  border: `1.5px solid ${isSelected ? '#E41919' : '#242E42'}`,
-                                  background: isSelected ? '#E41919' : 'transparent',
-                                }}
-                              >
-                                {isSelected && (
-                                  <svg width="7" height="7" viewBox="0 0 8 8">
-                                    <path d="M1 4l2 2 4-4" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                                  </svg>
-                                )}
-                              </span>
-                              <span className="font-mono text-xs text-white">{iface.name}</span>
-                            </div>
-                            <span className="font-mono text-[10px] text-slate-400">{formatBps(iface.current_bps, 1)}</span>
+                            <span
+                              className="w-3.5 h-3.5 rounded flex items-center justify-center shrink-0"
+                              style={{
+                                border: `1.5px solid ${isSelected ? '#E41919' : '#242E42'}`,
+                                background: isSelected ? '#E41919' : 'transparent',
+                              }}
+                            >
+                              {isSelected && (
+                                <svg width="7" height="7" viewBox="0 0 8 8">
+                                  <path d="M1 4l2 2 4-4" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              )}
+                            </span>
+                            <span className="font-mono text-xs text-white">{iface.name}</span>
                           </button>
                         )
                       })}
@@ -490,27 +482,24 @@ export default function FilterBar({
                             type="button"
                             key={iface.id}
                             onClick={() => onToggleInterface(iface.id)}
-                            className={`w-full flex items-center justify-between p-1.5 rounded-lg text-left transition-colors ${
+                            className={`w-full flex items-center gap-2 p-1.5 rounded-lg text-left transition-colors ${
                               isSelected ? 'bg-[#FFCE00]/15 border border-[#FFCE00]/40' : 'bg-[#0B0F17]/50 border border-[#242E42]/50 hover:border-slate-600'
                             }`}
                           >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="w-3.5 h-3.5 rounded flex items-center justify-center shrink-0"
-                                style={{
-                                  border: `1.5px solid ${isSelected ? '#FFCE00' : '#242E42'}`,
-                                  background: isSelected ? '#FFCE00' : 'transparent',
-                                }}
-                              >
-                                {isSelected && (
-                                  <svg width="7" height="7" viewBox="0 0 8 8">
-                                    <path d="M1 4l2 2 4-4" stroke="#0B0F17" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                                  </svg>
-                                )}
-                              </span>
-                              <span className="font-mono text-xs text-white">{iface.name}</span>
-                            </div>
-                            <span className="font-mono text-[10px] text-slate-400">{formatBps(iface.current_bps, 1)}</span>
+                            <span
+                              className="w-3.5 h-3.5 rounded flex items-center justify-center shrink-0"
+                              style={{
+                                border: `1.5px solid ${isSelected ? '#FFCE00' : '#242E42'}`,
+                                background: isSelected ? '#FFCE00' : 'transparent',
+                              }}
+                            >
+                              {isSelected && (
+                                <svg width="7" height="7" viewBox="0 0 8 8">
+                                  <path d="M1 4l2 2 4-4" stroke="#0B0F17" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              )}
+                            </span>
+                            <span className="font-mono text-xs text-white">{iface.name}</span>
                           </button>
                         )
                       })}
