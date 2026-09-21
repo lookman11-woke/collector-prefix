@@ -1,0 +1,62 @@
+# Configuration files with secrets
+config.yaml
+backend/config.yaml
+!config.example.yaml
+!backend/config.example.yaml
+
+# MaxMind GeoIP / GeoLite databases
+*.mmdb
+
+# Logs
+*.log
+logs/
+
+# Compiled Go binaries
+/collector
+/api
+/generator
+/backend/collector
+/backend/api
+/backend/generator
+bin/
+
+# Operating System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node / Frontend artifacts
+node_modules/
+dist/
+dist-ssr/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and local overrides
+*.local
+.env
+.env.*
+!.env.example
+
+# Local tooling
+.opencode/
+
+# IDEs and Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -1,0 +1,55 @@
+# collector-prefix configuration example
+# Copy this file to config.yaml (or backend/config.yaml) and edit for your environment.
+
+collector:
+  listen_addr: "0.0.0.0:2055"
+  sampling_rate: 1000 # Matches FreeBSD ng_netflow 1:1000 sampling
+  maxmind_path: "/etc/geoip/GeoLite2-ASN.mmdb"
+  batch_size: 25000
+  batch_max_wait_ms: 1000
+
+clickhouse:
+  addr: "127.0.0.1:9000"
+  database: "collector_db"
+  user: "default"
+  password: "" # Set via CLICKHOUSE_PASSWORD environment variable or config.yaml
+
+api:
+  listen_addr: "0.0.0.0:8080"
+  version: "v0.1.0"
+
+# Define your locally-owned ASNs and their IP prefix blocks.
+# Children must be subnets fully contained within the parent CIDR.
+asns:
+  - asn: "AS12345"
+    name: "Example ISP Network"
+    prefixes:
+      - cidr: "192.0.2.0/23"
+        children:
+          - cidr: "192.0.2.0/24"
+          - cidr: "192.0.3.0/24"
+
+# Router interface mappings.
+# router_ip: source IP of your FreeBSD router exporting NetFlow
+# ifindex:   kernel interface index from NetFlow records
+interfaces:
+  - router_ip: "192.0.2.1"
+    ifindex: 10
+    name: "IPT.UPSTREAM1"
+    type: "transit"
+  - router_ip: "192.0.2.1"
+    ifindex: 11
+    name: "IX.LOCAL-IX"
+    type: "ix"
+
+# Custom CIDR-to-ASN overrides (e.g. for private IPs or IX LAN subnets that MaxMind doesn't list)
+custom_asns:
+  - cidr: "10.0.0.0/8"
+    asn: 0
+    name: "Private Network (10.0.0.0/8)"
+  - cidr: "172.16.0.0/12"
+    asn: 0
+    name: "Private Network (172.16.0.0/12)"
+  - cidr: "192.168.0.0/16"
+    asn: 0
+    name: "Private Network (192.168.0.0/16)"
