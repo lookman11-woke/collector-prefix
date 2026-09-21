@@ -245,17 +245,20 @@ func (e *Enricher) MatchPrefix(ip net.IP) (result MatchResult, matched bool) {
 }
 
 // LookupInterface resolves a (routerIP, ifIndex) pair to interface metadata.
-// If no exact (routerIP, ifIndex) match exists, it falls back to matching by ifIndex alone.
+// It requires an exact (routerIP, ifIndex) match so that identical ifIndex numbers
+// on different routers (e.g. ifIndex 11) never collide.
 func (e *Enricher) LookupInterface(routerIP string, ifIndex uint32) (IfaceInfo, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	if info, ok := e.ifaces[IfaceKey{RouterIP: routerIP, IfIndex: ifIndex}]; ok {
 		return info, true
 	}
-	// Fallback: match by ifIndex alone
-	for k, v := range e.ifaces {
-		if k.IfIndex == ifIndex {
-			return v, true
+	// Fallback only if routerIP is unknown / empty
+	if routerIP == "" {
+		for k, v := range e.ifaces {
+			if k.IfIndex == ifIndex {
+				return v, true
+			}
 		}
 	}
 	return IfaceInfo{}, false
