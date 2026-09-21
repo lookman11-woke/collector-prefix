@@ -884,8 +884,9 @@ ORDER BY bucket ASC
 	for rows.Next() {
 		var bucket time.Time
 		var iface string
-		var inBps, outBps uint64
+		var inBps, outBps float64
 		if err := rows.Scan(&bucket, &iface, &inBps, &outBps); err != nil {
+			slog.Warn("api: asn-detail scan row error", "err", err)
 			continue
 		}
 		activeIfacesMap[iface] = true
@@ -969,8 +970,9 @@ GROUP BY isp_prefix, interface_name
 
 	for rowsSubnets.Next() {
 		var prefix, iface string
-		var inBps, outBps uint64
+		var inBps, outBps float64
 		if err := rowsSubnets.Scan(&prefix, &iface, &inBps, &outBps); err != nil {
+			slog.Warn("api: asn-detail subnets scan error", "err", err)
 			continue
 		}
 		activeIfacesMap[iface] = true
