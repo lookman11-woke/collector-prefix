@@ -29,7 +29,7 @@ export default function Header({ status, activeTab = 'overview', onTabChange }: 
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
       }}
-      className="sticky top-0 z-50 flex items-center justify-between px-6 py-3"
+      className="sticky top-0 z-50 flex items-center justify-between px-6 py-3 no-print print:hidden"
     >
       {/* Brand Identity & Title */}
       <div className="flex items-center gap-3">

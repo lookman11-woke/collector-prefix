@@ -206,3 +206,10 @@
     border-color: rgba(228, 25, 25, 0.65);
   }
 }
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
