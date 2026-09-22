@@ -5,6 +5,7 @@ import KpiRibbon from './components/KpiRibbon'
 import TrafficOverview from './components/TrafficOverview'
 import SankeyFlow from './components/SankeyFlow'
 import AsnExplorer from './components/AsnExplorer'
+import ReportView from './components/ReportView'
 import {
   getStatus,
   getASNs,
@@ -36,7 +37,7 @@ export default function App() {
   const [interfaces, setInterfaces] = useState<Interface[]>(INTERFACES)
   const [trafficData, setTrafficData] = useState<TrafficOverviewResponse | null>(null)
   const [asnData, setAsnData] = useState<AsnFlowResponse | null>(null)
-  const [activeTab, setActiveTab] = useState<'overview' | 'asn-explorer'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'asn-explorer' | 'reports'>('overview')
 
   // Filter state
   const [selectedAsns, setSelectedAsns] = useState<Set<string>>(new Set(MOCK_ASNS.map((a) => a.asn)))
@@ -304,9 +305,13 @@ export default function App() {
             </div>
           </main>
         </>
-      ) : (
+      ) : activeTab === 'asn-explorer' ? (
         <main className="flex-1 flex flex-col gap-4 p-4 md:p-6 max-w-[1600px] w-full mx-auto">
           <AsnExplorer interfaces={interfaces} allPrefixes={allCidrs} />
+        </main>
+      ) : (
+        <main className="flex-1 flex flex-col gap-4 p-4 md:p-6 max-w-[1600px] w-full mx-auto">
+          <ReportView interfaces={interfaces} />
         </main>
       )}
     </div>

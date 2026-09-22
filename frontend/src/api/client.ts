@@ -7,6 +7,7 @@ import {
   TRAFFIC_SUMMARY,
   ASN_FLOW,
   getMockAsnDetail,
+  getMockInterfaceReport,
   type PrefixNode,
   type Interface,
   type ASNGroup,
@@ -15,6 +16,11 @@ import {
   type AsnDetailSummary,
   type AsnDetailPoint,
   type AsnSubnetImpact,
+  type InterfaceReportSummary,
+  type InterfaceReportPoint,
+  type InterfaceReportTopAsn,
+  type InterfaceReportItem,
+  type InterfaceReportResponse,
 } from '../data/mock'
 
 // ── Shared types ──────────────────────────────────────────────────────────────
@@ -28,6 +34,11 @@ export type {
   AsnDetailSummary,
   AsnDetailPoint,
   AsnSubnetImpact,
+  InterfaceReportSummary,
+  InterfaceReportPoint,
+  InterfaceReportTopAsn,
+  InterfaceReportItem,
+  InterfaceReportResponse,
 }
 
 export interface SystemStatus {
@@ -261,4 +272,29 @@ export async function getAsnDetail(
   }
   return getMockAsnDetail(query.asn, query.time_range, interfaces, prefixes)
 }
+
+export interface InterfaceReportQuery {
+  time_range: string
+  start_time?: string
+  end_time?: string
+  interfaces?: string[]
+}
+
+export async function getInterfaceReports(
+  query: InterfaceReportQuery,
+  interfaces: Interface[] = INTERFACES
+): Promise<InterfaceReportResponse> {
+  const data = await request<InterfaceReportResponse>('/reports/interfaces', {
+    method: 'POST',
+    body: JSON.stringify(query),
+  })
+  if (data && data.reports && data.reports.length > 0) {
+    return data
+  }
+  const ifaceNames = query.interfaces && query.interfaces.length > 0
+    ? query.interfaces
+    : interfaces.map((i) => i.name)
+  return getMockInterfaceReport(query.time_range, ifaceNames)
+}
+
 

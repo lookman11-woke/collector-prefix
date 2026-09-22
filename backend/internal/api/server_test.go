@@ -115,3 +115,63 @@ func TestAsnDetailValidation(t *testing.T) {
 	}
 }
 
+func TestInterfaceReportHandler(t *testing.T) {
+	s := &Server{mux: http.NewServeMux()}
+	s.routes()
+
+	// 1. Invalid JSON body -> 400 Bad Request
+	reqInvalid := httptest.NewRequest(http.MethodPost, "/api/v1/reports/interfaces", strings.NewReader(`{invalid json`))
+	reqInvalid.Header.Set("Content-Type", "application/json")
+	wInvalid := httptest.NewRecorder()
+	s.ServeHTTP(wInvalid, reqInvalid)
+	if wInvalid.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for invalid JSON, got %d", wInvalid.Code)
+	}
+
+	// 2. Empty/default request when DB is nil -> 200 OK with mock/fallback structures
+	reqDefault := httptest.NewRequest(http.MethodPost, "/api/v1/reports/interfaces", strings.NewReader(`{"time_range":"24h"}`))
+	reqDefault.Header.Set("Content-Type", "application/json")
+	wDefault := httptest.NewRecorder()
+	s.ServeHTTP(wDefault, reqDefault)
+	if wDefault.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for default request with nil DB, got %d: %s", wDefault.Code, wDefault.Body.String())
+	}
+
+	var resp interfaceReportResponse
+	if err := json.NewDecoder(wDefault.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.TimeRange != "24h" {
+		t.Errorf("expected time_range '24h', got %q", resp.TimeRange)
+	}
+	if resp.StartTime == "" || resp.EndTime == "" {
+		t.Errorf("expected non-empty start_time and end_time, got start=%q end=%q", resp.StartTime, resp.EndTime)
+	}
+	if len(resp.Reports) == 0 {
+		t.Errorf("expected at least 1 interface report in fallback")
+	}
+
+	// 3. Filtered request by interface
+	reqFiltered := httptest.NewRequest(http.MethodPost, "/api/v1/reports/interfaces", strings.NewReader(`{"time_range":"7d","interfaces":["IPT.CBN"]}`))
+	reqFiltered.Header.Set("Content-Type", "application/json")
+	wFiltered := httptest.NewRecorder()
+	s.ServeHTTP(wFiltered, reqFiltered)
+	if wFiltered.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for filtered request, got %d", wFiltered.Code)
+	}
+
+	var respFiltered interfaceReportResponse
+	if err := json.NewDecoder(wFiltered.Body).Decode(&respFiltered); err != nil {
+		t.Fatalf("failed to decode filtered response: %v", err)
+	}
+	if len(respFiltered.Reports) != 1 {
+		t.Fatalf("expected 1 interface report, got %d", len(respFiltered.Reports))
+	}
+	if respFiltered.Reports[0].InterfaceName != "IPT.CBN" {
+		t.Errorf("expected interface_name 'IPT.CBN', got %q", respFiltered.Reports[0].InterfaceName)
+	}
+	if respFiltered.Reports[0].Type != "transit" {
+		t.Errorf("expected type 'transit', got %q", respFiltered.Reports[0].Type)
+	}
+}
+

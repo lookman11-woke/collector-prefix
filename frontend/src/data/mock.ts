@@ -545,3 +545,167 @@ export function getMockAsnDetail(
     subnets,
   }
 }
+
+// ── Interface Usage & Top 10 ASNs Exportable Report ───────────────────────────
+
+export interface InterfaceReportSummary {
+  peak_inbound_bps: number
+  peak_outbound_bps: number
+  avg_inbound_bps: number
+  avg_outbound_bps: number
+}
+
+export interface InterfaceReportPoint {
+  timestamp: string
+  inbound_bps: number
+  outbound_bps: number
+}
+
+export interface InterfaceReportTopAsn {
+  asn: string
+  org: string
+  bps: number
+  percent: number
+}
+
+export interface InterfaceReportItem {
+  interface_name: string
+  type: 'transit' | 'ix'
+  summary: InterfaceReportSummary
+  series: InterfaceReportPoint[]
+  top_asns: InterfaceReportTopAsn[]
+}
+
+export interface InterfaceReportResponse {
+  time_range: string
+  start_time: string
+  end_time: string
+  reports: InterfaceReportItem[]
+}
+
+const MOCK_TOP_TALKERS = [
+  { asn: 'AS15169', org: 'Google LLC', share: 0.28 },
+  { asn: 'AS32934', org: 'Meta Platforms, Inc.', share: 0.22 },
+  { asn: 'AS13335', org: 'Cloudflare, Inc.', share: 0.14 },
+  { asn: 'AS20940', org: 'Akamai International B.V.', share: 0.10 },
+  { asn: 'AS16509', org: 'Amazon.com, Inc.', share: 0.07 },
+  { asn: 'AS139057', org: 'Edgenext Legend Dynasty', share: 0.05 },
+  { asn: 'AS714', org: 'Apple Inc.', share: 0.04 },
+  { asn: 'AS45102', org: 'Alibaba.com Singapore', share: 0.035 },
+  { asn: 'AS149340', org: 'PT Digital Hasanah Indonesia', share: 0.025 },
+  { asn: 'AS4761', org: 'PT INDOSAT Tbk', share: 0.02 },
+]
+
+export function getMockInterfaceReport(
+  timeRange: string = '24h',
+  interfaceNames?: string[]
+): InterfaceReportResponse {
+  const now = Date.now()
+  let pointsCount = 24
+  let stepMs = 3600 * 1000 // 1 hour
+  let rangeMs = 24 * 3600 * 1000
+
+  if (timeRange === '7d') {
+    pointsCount = 28
+    stepMs = 6 * 3600 * 1000 // 6 hours
+    rangeMs = 7 * 24 * 3600 * 1000
+  } else if (timeRange === '30d') {
+    pointsCount = 30
+    stepMs = 24 * 3600 * 1000 // 1 day
+    rangeMs = 30 * 24 * 3600 * 1000
+  }
+
+  const startTime = new Date(now - rangeMs).toISOString()
+  const endTime = new Date(now).toISOString()
+
+  let targetIfaces = INTERFACES
+  if (interfaceNames && interfaceNames.length > 0) {
+    const set = new Set(interfaceNames)
+    const filtered = INTERFACES.filter((i) => set.has(i.name) || set.has(i.id))
+    if (filtered.length > 0) {
+      targetIfaces = filtered
+    } else {
+      targetIfaces = interfaceNames.map((name) => ({
+        id: name,
+        name,
+        type: name.startsWith('LC.') || name.startsWith('IX.') ? 'ix' : 'transit',
+        status: 'up',
+        current_bps: 15_000_000,
+      }))
+    }
+  }
+
+  const reports: InterfaceReportItem[] = targetIfaces.map((iface, ifaceIdx) => {
+    const isIX = iface.type === 'ix'
+    const baseIn = isIX ? 32_000_000 + (ifaceIdx * 4_000_000) : 22_000_000 + (ifaceIdx * 5_000_000)
+    const baseOut = isIX ? 8_000_000 + (ifaceIdx * 1_500_000) : 6_000_000 + (ifaceIdx * 2_000_000)
+
+    const series: InterfaceReportPoint[] = []
+    let sumIn = 0
+    let sumOut = 0
+    let peakIn = 0
+    let peakOut = 0
+
+    for (let i = pointsCount; i >= 0; i--) {
+      const t = new Date(now - i * stepMs).toISOString()
+      const phase = (pointsCount - i) / pointsCount
+      const dailyWave = Math.sin(phase * Math.PI * 2) * 0.25
+      const jitter = (Math.sin(i * 1.7 + ifaceIdx) * 0.15)
+      const inVal = Math.max(1_000_000, Math.round(baseIn * (1 + dailyWave + jitter)))
+      const outVal = Math.max(500_000, Math.round(baseOut * (1 + dailyWave * 0.7 + jitter * 0.8)))
+
+      if (inVal > peakIn) peakIn = inVal
+      if (outVal > peakOut) peakOut = outVal
+      sumIn += inVal
+      sumOut += outVal
+
+      series.push({
+        timestamp: t,
+        inbound_bps: inVal,
+        outbound_bps: outVal,
+      })
+    }
+
+    const count = series.length || 1
+    const avgIn = Math.round(sumIn / count)
+    const avgOut = Math.round(sumOut / count)
+
+    const top_asns: InterfaceReportTopAsn[] = MOCK_TOP_TALKERS.map((talker, talkerIdx) => {
+      // slight per-interface variation
+      const mod = 1 + (Math.sin(ifaceIdx * 3 + talkerIdx) * 0.1)
+      const bps = Math.round(avgIn * talker.share * mod)
+      return {
+        asn: talker.asn,
+        org: talker.org,
+        bps,
+        percent: parseFloat((talker.share * 100).toFixed(1)),
+      }
+    })
+
+    return {
+      interface_name: iface.name,
+      type: iface.type,
+      summary: {
+        peak_inbound_bps: peakIn,
+        peak_outbound_bps: peakOut,
+        avg_inbound_bps: avgIn,
+        avg_outbound_bps: avgOut,
+      },
+      series,
+      top_asns,
+    }
+  })
+
+  // Sort transit first, then alphabetically
+  reports.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'transit' ? -1 : 1
+    return a.interface_name.localeCompare(b.interface_name)
+  })
+
+  return {
+    time_range: timeRange,
+    start_time: startTime,
+    end_time: endTime,
+    reports,
+  }
+}
