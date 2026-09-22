@@ -301,8 +301,23 @@ export default function ReportView({ interfaces }: Props) {
   }, [timeRange, selectedInterfaces, interfaces])
 
   useEffect(() => {
-    void fetchReport()
-  }, [fetchReport])
+    let active = true
+    void getInterfaceReports(
+      {
+        time_range: timeRange,
+        interfaces: Array.from(selectedInterfaces),
+      },
+      interfaces
+    ).then((data) => {
+      if (active) {
+        setReportData(data)
+        setGeneratedAt(new Date())
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [timeRange, selectedInterfaces, interfaces])
 
   const handleToggleInterface = (id: string) => {
     setSelectedInterfaces((prev) => {
