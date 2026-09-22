@@ -135,37 +135,74 @@ func (c *Collector) enrichAndQueue(msg *protoproducer.ProtoProducerMessage) {
 	srcASN := c.enc.LookupASN(srcNetIP)
 	dstASN := c.enc.LookupASN(dstNetIP)
 
-	var ispPrefix, ispASN string
-	var isInbound uint8
-
-	// LPM match: dst → inbound, src → outbound
-	if r, matched := c.enc.MatchPrefix(dstNetIP); matched {
-		ispPrefix = r.CIDR
-		ispASN = r.ISPASN
-		isInbound = 1
-	} else if r, matched := c.enc.MatchPrefix(srcNetIP); matched {
-		ispPrefix = r.CIDR
-		ispASN = r.ISPASN
-		isInbound = 0
-	} else {
-		return // not our traffic
-	}
-
-	inIface := msg.InIf
-	outIface := msg.OutIf
-	ifIdx := inIface
-	if isInbound == 0 {
-		ifIdx = outIface
-	}
-
 	routerIP := ""
 	if len(msg.SamplerAddress) > 0 {
 		routerIP = net.IP(msg.SamplerAddress).String()
 	}
 
-	ifName := ""
-	if info, ok := c.enc.LookupInterface(routerIP, ifIdx); ok {
-		ifName = info.Name
+	inIface := msg.InIf
+	outIface := msg.OutIf
+
+	inInfo, hasIn := c.enc.LookupInterface(routerIP, inIface)
+	outInfo, hasOut := c.enc.LookupInterface(routerIP, outIface)
+
+	dstPfx, dstMatched := c.enc.MatchPrefix(dstNetIP)
+	srcPfx, srcMatched := c.enc.MatchPrefix(srcNetIP)
+
+	if !dstMatched && !srcMatched {
+		return // not our traffic
+	}
+
+	var ispPrefix, ispASN string
+	var isInbound uint8
+	var ifName string
+
+	if hasIn && !hasOut {
+		// Flow entered through a monitored edge interface -> INBOUND
+		isInbound = 1
+		ifName = inInfo.Name
+		if dstMatched {
+			ispPrefix = dstPfx.CIDR
+			ispASN = dstPfx.ISPASN
+		} else {
+			ispPrefix = srcPfx.CIDR
+			ispASN = srcPfx.ISPASN
+		}
+	} else if !hasIn && hasOut {
+		// Flow exited through a monitored edge interface -> OUTBOUND
+		isInbound = 0
+		ifName = outInfo.Name
+		if srcMatched {
+			ispPrefix = srcPfx.CIDR
+			ispASN = srcPfx.ISPASN
+		} else {
+			ispPrefix = dstPfx.CIDR
+			ispASN = dstPfx.ISPASN
+		}
+	} else if hasIn && hasOut {
+		// Flow crossed two monitored interfaces
+		if dstMatched {
+			isInbound = 1
+			ifName = inInfo.Name
+			ispPrefix = dstPfx.CIDR
+			ispASN = dstPfx.ISPASN
+		} else {
+			isInbound = 0
+			ifName = outInfo.Name
+			ispPrefix = srcPfx.CIDR
+			ispASN = srcPfx.ISPASN
+		}
+	} else {
+		// Neither interface is in config
+		if dstMatched {
+			isInbound = 1
+			ispPrefix = dstPfx.CIDR
+			ispASN = dstPfx.ISPASN
+		} else {
+			isInbound = 0
+			ispPrefix = srcPfx.CIDR
+			ispASN = srcPfx.ISPASN
+		}
 	}
 
 	row := clickhouse.FlowRow{
