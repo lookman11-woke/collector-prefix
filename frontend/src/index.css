@@ -68,6 +68,12 @@
   ::-webkit-scrollbar-thumb:hover {
     background: rgba(228, 25, 25, 0.65);
   }
+
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+  }
 }
 
 @layer components {
