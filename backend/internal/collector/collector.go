@@ -87,7 +87,7 @@ func (c *Collector) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("collector: compile producer config: %w", err)
 	}
-	prod, err := protoproducer.CreateProtoProducer(compiledCfg, nil)
+	prod, err := protoproducer.CreateProtoProducer(compiledCfg, protoproducer.CreateSamplingSystem)
 	if err != nil {
 		return fmt.Errorf("collector: create producer: %w", err)
 	}
