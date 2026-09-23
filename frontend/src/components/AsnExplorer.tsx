@@ -558,7 +558,7 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
   return (
     <div className="flex flex-col gap-4 w-full">
       {/* 1. Target ASN Selector & Telemetry Command Bar */}
-      <div className="p-4 rounded-xl bg-[#161E2E] border border-[#242E42] shadow-sm flex flex-col">
+      <div className={`p-4 rounded-xl flex flex-col ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#161E2E] border-[#242E42] shadow-sm'} border`}>
         {/* Top: Search, Target chip, Time range, and Refresh */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Left: Search input & Active Target */}
@@ -579,7 +579,11 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
                   }}
                   onFocus={() => setIsDropdownOpen(true)}
                   placeholder="Search ASN or Org (e.g. 15169, Meta)..."
-                  className="w-full pl-9 pr-8 py-2 bg-[#0B0F17] border border-[#242E42] rounded-lg text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#E41919] transition-colors"
+                  className={`w-full pl-9 pr-8 py-2 rounded-lg text-xs font-mono border focus:outline-none focus:border-[#E41919] transition-colors ${
+                    isLight
+                      ? 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:bg-white'
+                      : 'bg-[#0B0F17] border-[#242E42] text-slate-100 placeholder-slate-500'
+                  }`}
                 />
                 {searchInput && (
                   <button
@@ -588,7 +592,7 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
                       setSearchInput('')
                       setIsDropdownOpen(false)
                     }}
-                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-500 hover:text-slate-300"
+                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -599,16 +603,20 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
 
               {/* Autocomplete dropdown */}
               {isDropdownOpen && searchSuggestions.length > 0 && (
-                <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-[#161E2E] border border-[#242E42] rounded-lg shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                <div className={`absolute left-0 right-0 top-full mt-1.5 z-50 rounded-lg shadow-xl overflow-hidden max-h-60 overflow-y-auto border ${
+                  isLight ? 'bg-white border-slate-200 shadow-xl' : 'bg-[#161E2E] border-[#242E42]'
+                }`}>
                   {searchSuggestions.map(([asn, org]) => (
                     <button
                       key={asn}
                       type="button"
                       onClick={() => handleSelectAsn(asn)}
-                      className="w-full px-3 py-2 text-left flex items-center justify-between hover:bg-[#242E42]/60 transition-colors border-b border-[#242E42]/40 last:border-0"
+                      className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors border-b last:border-0 ${
+                        isLight ? 'hover:bg-slate-100 border-slate-100' : 'hover:bg-[#242E42]/60 border-[#242E42]/40'
+                      }`}
                     >
-                      <span className="font-mono text-xs font-bold text-[#FFCE00]">{asn}</span>
-                      <span className="text-xs text-slate-300 truncate max-w-[180px]">{org}</span>
+                      <span className={`font-mono text-xs font-bold ${isLight ? 'text-amber-700' : 'text-[#FFCE00]'}`}>{asn}</span>
+                      <span className={`text-xs truncate max-w-[180px] ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>{org}</span>
                     </button>
                   ))}
                 </div>
@@ -616,11 +624,13 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
             </div>
 
             {/* Current Target Chip */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0B0F17] border border-[#E41919]/40 rounded-lg">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
+              isLight ? 'bg-red-50/70 border-red-200 text-slate-800' : 'bg-[#0B0F17] border-[#E41919]/40 text-white'
+            }`}>
               <span className="w-2 h-2 rounded-full bg-[#E41919] animate-pulse"></span>
-              <span className="font-mono text-xs font-bold text-white">{data?.asn || selectedAsn}</span>
-              <span className="text-slate-500 text-xs">·</span>
-              <span className="text-xs font-medium text-slate-200 truncate max-w-[220px]">
+              <span className={`font-mono text-xs font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{data?.asn || selectedAsn}</span>
+              <span className={`${isLight ? 'text-slate-400' : 'text-slate-500'} text-xs`}>·</span>
+              <span className={`text-xs font-medium truncate max-w-[220px] ${isLight ? 'text-slate-600' : 'text-slate-200'}`}>
                 {data?.org || KNOWN_ASNS[selectedAsn] || 'Autonomous System'}
               </span>
             </div>
@@ -629,7 +639,9 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
           {/* Right: Time Range & Refresh Button */}
           <div className="flex items-center gap-3">
             {/* Time range picker */}
-            <div className="flex items-center bg-[#0B0F17] p-1 rounded-lg border border-[#242E42]">
+            <div className={`flex items-center p-1 rounded-lg border ${
+              isLight ? 'bg-slate-100 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'
+            }`}>
               {TIME_RANGES.map((tr) => (
                 <button
                   key={tr}
@@ -638,7 +650,9 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
                   className={`px-2.5 py-1 text-xs font-mono rounded transition-colors ${
                     timeRange === tr
                       ? 'bg-[#E41919] text-white font-bold shadow'
-                      : 'text-slate-400 hover:text-slate-200'
+                      : isLight
+                        ? 'text-slate-600 hover:text-slate-900'
+                        : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   {tr}
@@ -651,11 +665,13 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
               type="button"
               onClick={fetchData}
               disabled={loading}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0B0F17] hover:bg-[#242E42] border border-[#242E42] rounded-lg text-xs font-mono text-slate-200 transition-colors disabled:opacity-50"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors disabled:opacity-50 border ${
+                isLight ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700' : 'bg-[#0B0F17] hover:bg-[#242E42] border-[#242E42] text-slate-200'
+              }`}
               title="Reload ASN Telemetry"
             >
               <svg
-                className={`w-3.5 h-3.5 text-[#FFCE00] ${loading ? 'animate-spin' : ''}`}
+                className={`w-3.5 h-3.5 ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'} ${loading ? 'animate-spin' : ''}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -668,7 +684,7 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
         </div>
 
         {/* Dynamic Top 10 Remote ASNs (5-5 Grid Below Search Bar) */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-3 pt-3 border-t border-[#242E42]/60">
+        <div className={`grid grid-cols-2 sm:grid-cols-5 gap-2 mt-3 pt-3 border-t ${isLight ? 'border-slate-200' : 'border-[#242E42]/60'}`}>
           {displayedTopAsns.slice(0, 10).map((chip, idx) => {
             const isCurrent = (data?.asn || selectedAsn) === chip.asn
             return (
@@ -680,22 +696,26 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
                 className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all border text-left ${
                   isCurrent
                     ? 'bg-[#E41919] text-white border-[#E41919] font-bold shadow-md shadow-[#E41919]/20'
-                    : 'bg-[#0B0F17] text-slate-300 border-[#242E42] hover:border-slate-500 hover:text-white hover:bg-[#1a2333]'
+                    : isLight
+                      ? 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 hover:text-slate-900 hover:bg-slate-50 shadow-sm'
+                      : 'bg-[#0B0F17] text-slate-300 border-[#242E42] hover:border-slate-500 hover:text-white hover:bg-[#1a2333]'
                 }`}
               >
                 <span
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-tight shrink-0 ${
+                  className={`px-1.5 py-0.5 rounded text-[10px] tracking-tight shrink-0 ${
                     isCurrent
-                      ? 'bg-black/30 text-white'
-                      : 'bg-[#242E42] text-slate-400'
+                      ? 'bg-black/30 text-white font-bold'
+                      : isLight
+                        ? 'bg-slate-100 text-slate-600 font-bold'
+                        : 'bg-[#242E42] text-slate-400 font-bold'
                   }`}
                 >
                   #{idx + 1}
                 </span>
-                <span className={`shrink-0 ${isCurrent ? 'text-white font-bold' : 'text-[#FFCE00] font-semibold'}`}>
+                <span className={`shrink-0 ${isCurrent ? 'text-white font-bold' : isLight ? 'text-amber-700 font-bold' : 'text-[#FFCE00] font-semibold'}`}>
                   {chip.asn}
                 </span>
-                <span className={`truncate text-[11px] ${isCurrent ? 'text-white/90' : 'text-slate-400'}`}>
+                <span className={`truncate text-[11px] ${isCurrent ? 'text-white/90' : isLight ? 'text-slate-600 font-medium' : 'text-slate-400'}`}>
                   {chip.name}
                 </span>
               </button>
@@ -707,9 +727,9 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
       {/* 2. Selected ASN Summary Ribbon */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1: Total Bandwidth */}
-        <div className="p-4 rounded-xl bg-[#161E2E] border border-[#242E42] flex flex-col justify-between">
+        <div className={`p-4 rounded-xl flex flex-col justify-between border ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#161E2E] border-[#242E42]'}`}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+            <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
               Total ASN Bandwidth
             </span>
             <span className="p-1 rounded bg-[#E41919]/10 text-[#E41919]">
@@ -719,31 +739,31 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
             </span>
           </div>
           <div className="my-2">
-            <span className="font-mono text-2xl font-bold text-white tracking-tight">
+            <span className={`font-mono text-2xl font-bold tracking-tight ${isLight ? 'text-slate-900' : 'text-white'}`}>
               {formatBps(totalBps)}
             </span>
           </div>
-          <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 border-t border-[#242E42]/60 pt-2">
+          <div className={`flex items-center justify-between text-[11px] font-mono border-t pt-2 ${isLight ? 'border-slate-100 text-slate-500' : 'border-[#242E42]/60 text-slate-400'}`}>
             <span>Peak In Window:</span>
-            <span className="text-[#FFCE00] font-bold">
+            <span className={`${isLight ? 'text-amber-700' : 'text-[#FFCE00]'} font-bold`}>
               {formatBps((summary?.peak_inbound_bps || 0) + (summary?.peak_outbound_bps || 0))}
             </span>
           </div>
         </div>
 
         {/* KPI 2: Ingress vs Egress Split */}
-        <div className="p-4 rounded-xl bg-[#161E2E] border border-[#242E42] flex flex-col justify-between">
+        <div className={`p-4 rounded-xl flex flex-col justify-between border ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#161E2E] border-[#242E42]'}`}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+            <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
               Ingress / Egress Split
             </span>
-            <span className="text-[10px] font-mono text-slate-400">
+            <span className={`text-[10px] font-mono ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
               IN {inPct}% / OUT {outPct}%
             </span>
           </div>
           {/* Progress split bar */}
           <div className="my-2">
-            <div className="w-full h-2 rounded-full bg-[#0B0F17] overflow-hidden flex">
+            <div className={`w-full h-2 rounded-full overflow-hidden flex ${isLight ? 'bg-slate-100' : 'bg-[#0B0F17]'}`}>
               <div
                 className="h-full bg-cyan-500 transition-all duration-500"
                 style={{ width: `${inPct}%` }}
@@ -756,12 +776,12 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
               />
             </div>
           </div>
-          <div className="flex items-center justify-between text-[11px] font-mono border-t border-[#242E42]/60 pt-2">
-            <div className="flex items-center gap-1.5 text-cyan-400">
+          <div className={`flex items-center justify-between text-[11px] font-mono border-t pt-2 ${isLight ? 'border-slate-100 text-slate-500' : 'border-[#242E42]/60'}`}>
+            <div className={`flex items-center gap-1.5 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>
               <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
               <span>In: {formatBps(inBps)}</span>
             </div>
-            <div className="flex items-center gap-1.5 text-emerald-400">
+            <div className={`flex items-center gap-1.5 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
               <span>Out: {formatBps(outBps)}</span>
             </div>
@@ -769,18 +789,18 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
         </div>
 
         {/* KPI 3: Transit vs IX Distribution */}
-        <div className="p-4 rounded-xl bg-[#161E2E] border border-[#242E42] flex flex-col justify-between">
+        <div className={`p-4 rounded-xl flex flex-col justify-between border ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#161E2E] border-[#242E42]'}`}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+            <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
               Transit vs IX Peering
             </span>
-            <span className="text-[10px] font-mono font-bold text-[#FFCE00]">
+            <span className={`text-[10px] font-mono font-bold ${isLight ? 'text-amber-700' : 'text-[#FFCE00]'}`}>
               IPT {transitPct}% · IX {ixPct}%
             </span>
           </div>
           {/* Distribution bar */}
           <div className="my-2">
-            <div className="w-full h-2 rounded-full bg-[#0B0F17] overflow-hidden flex">
+            <div className={`w-full h-2 rounded-full overflow-hidden flex ${isLight ? 'bg-slate-100' : 'bg-[#0B0F17]'}`}>
               <div
                 className="h-full bg-[#E41919] transition-all duration-500"
                 style={{ width: `${transitPct}%` }}
@@ -793,12 +813,12 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
               />
             </div>
           </div>
-          <div className="flex items-center justify-between text-[11px] font-mono border-t border-[#242E42]/60 pt-2">
-            <div className="flex items-center gap-1.5 text-[#FCA5A5]">
+          <div className={`flex items-center justify-between text-[11px] font-mono border-t pt-2 ${isLight ? 'border-slate-100 text-slate-500' : 'border-[#242E42]/60'}`}>
+            <div className={`flex items-center gap-1.5 ${isLight ? 'text-red-700' : 'text-[#FCA5A5]'}`}>
               <span className="w-2 h-2 rounded-full bg-[#E41919]"></span>
               <span>IPT: {formatBps(summary?.transit_bps || 0)}</span>
             </div>
-            <div className="flex items-center gap-1.5 text-[#FDE68A]">
+            <div className={`flex items-center gap-1.5 ${isLight ? 'text-amber-700' : 'text-[#FDE68A]'}`}>
               <span className="w-2 h-2 rounded-full bg-[#FFCE00]"></span>
               <span>IX: {formatBps(summary?.ix_bps || 0)}</span>
             </div>
@@ -806,12 +826,14 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
         </div>
 
         {/* KPI 4: Active Interface Carrier Matrix */}
-        <div className="p-4 rounded-xl bg-[#161E2E] border border-[#242E42] flex flex-col justify-between">
+        <div className={`p-4 rounded-xl flex flex-col justify-between border ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#161E2E] border-[#242E42]'}`}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+            <span className={`text-[11px] font-mono uppercase tracking-wider ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
               Active Interfaces
             </span>
-            <span className="text-[11px] font-mono font-bold text-white px-2 py-0.5 rounded bg-[#0B0F17] border border-[#242E42]">
+            <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded border ${
+              isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-[#0B0F17] border-[#242E42] text-white'
+            }`}>
               {summary?.active_interfaces?.length || 0} Carriers
             </span>
           </div>
@@ -823,8 +845,10 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
                 return (
                   <span
                     key={iface}
-                    style={{ borderColor: hexToRgba(color, 0.4), color: color }}
-                    className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-[#0B0F17] border"
+                    style={{ borderColor: hexToRgba(color, isLight ? 0.6 : 0.4), color: color }}
+                    className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border ${
+                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'
+                    }`}
                   >
                     {isTransit ? 'IPT: ' : 'IX: '}
                     {iface}
@@ -835,36 +859,38 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
               <span className="text-xs text-slate-500 font-mono">No carriers active</span>
             )}
           </div>
-          <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 border-t border-[#242E42]/60 pt-2">
+          <div className={`flex items-center justify-between text-[11px] font-mono border-t pt-2 ${isLight ? 'border-slate-100 text-slate-500' : 'border-[#242E42]/60 text-slate-400'}`}>
             <span>Color code:</span>
             <span className="flex items-center gap-2 text-[10px]">
-              <span className="text-[#E41919]">● Transit (Red)</span>
-              <span className="text-[#FFCE00]">● IX (Gold)</span>
+              <span className={isLight ? 'text-red-700' : 'text-[#E41919]'}>● Transit (Red)</span>
+              <span className={isLight ? 'text-amber-700' : 'text-[#FFCE00]'}>● IX (Gold)</span>
             </span>
           </div>
         </div>
       </div>
 
       {/* 3. Full-Width Stacked Area Chart */}
-      <div className="p-5 rounded-xl bg-[#161E2E] border border-[#242E42] shadow-sm">
+      <div className={`p-5 rounded-xl border ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#161E2E] border-[#242E42] shadow-sm'}`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
           <div>
-            <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+            <h3 className={`text-sm font-bold tracking-tight flex items-center gap-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
               <span>Traffic Over Time by Interface (Stacked Area)</span>
-              <span className="text-[10px] font-mono font-normal px-2 py-0.5 rounded bg-[#0B0F17] text-[#FFCE00] border border-[#242E42]">
+              <span className={`text-[10px] font-mono font-normal px-2 py-0.5 rounded border ${
+                isLight ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-[#0B0F17] text-[#FFCE00] border-[#242E42]'
+              }`}>
                 {data?.asn || selectedAsn}
               </span>
             </h3>
-            <p className="text-xs text-slate-400">
+            <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
               Breakdown of incoming & outgoing traffic across upstream transit providers and peering exchanges.
             </p>
           </div>
           <div className="flex items-center gap-3 text-xs font-mono">
-            <span className="flex items-center gap-1.5 text-slate-300">
+            <span className={`flex items-center gap-1.5 ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
               <span className="w-2.5 h-2.5 rounded-sm bg-[#E41919]"></span>
               <span>Transit (IPT)</span>
             </span>
-            <span className="flex items-center gap-1.5 text-slate-300">
+            <span className={`flex items-center gap-1.5 ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
               <span className="w-2.5 h-2.5 rounded-sm bg-[#FFCE00]"></span>
               <span>Peering (IX)</span>
             </span>
@@ -883,17 +909,17 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
       </div>
 
       {/* 4. Local Subnet Impact Table */}
-      <div className="rounded-xl bg-[#161E2E] border border-[#242E42] shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-[#242E42] flex items-center justify-between">
+      <div className={`rounded-xl border overflow-hidden ${isLight ? 'bg-white border-slate-200 shadow-sm' : 'bg-[#161E2E] border-[#242E42] shadow-sm'}`}>
+        <div className={`p-4 border-b flex items-center justify-between ${isLight ? 'border-slate-200' : 'border-[#242E42]'}`}>
           <div>
-            <h3 className="text-sm font-bold text-white tracking-tight">
+            <h3 className={`text-sm font-bold tracking-tight ${isLight ? 'text-slate-900' : 'text-white'}`}>
               Local ISP Subnet Breakdown & Impact
             </h3>
-            <p className="text-xs text-slate-400">
+            <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
               Local CIDR prefixes exchanging traffic with {data?.asn || selectedAsn} ({data?.org || 'Autonomous System'}).
             </p>
           </div>
-          <span className="text-xs font-mono text-slate-400">
+          <span className={`text-xs font-mono ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
             {data?.subnets?.length || 0} Subnets Listed
           </span>
         </div>
@@ -901,7 +927,7 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-[#0B0F17] text-[11px] font-mono uppercase tracking-wider text-slate-400 border-b border-[#242E42]">
+              <tr className={`text-[11px] font-mono uppercase tracking-wider border-b ${isLight ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-[#0B0F17] text-slate-400 border-[#242E42]'}`}>
                 <th className="py-3 px-4">Local Subnet (CIDR)</th>
                 <th className="py-3 px-4 text-right">Inbound (bps)</th>
                 <th className="py-3 px-4 text-right">Outbound (bps)</th>
@@ -910,7 +936,7 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
                 <th className="py-3 px-4 text-center">Dominant Interface</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#242E42]/60 text-xs font-mono">
+            <tbody className={`divide-y text-xs font-mono ${isLight ? 'divide-slate-200' : 'divide-[#242E42]/60'}`}>
               {data?.subnets && data.subnets.length > 0 ? (
                 data.subnets.map((sub, idx) => {
                   const ifaceColor = getInterfaceColor(sub.dominant_interface)
@@ -918,30 +944,30 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
                   return (
                     <tr
                       key={sub.cidr + idx}
-                      className="hover:bg-[#0B0F17]/60 transition-colors"
+                      className={`transition-colors border-b ${isLight ? 'hover:bg-slate-50/80 border-slate-200 text-slate-800' : 'hover:bg-[#0B0F17]/50 border-[#242E42]/60 text-slate-200'}`}
                     >
-                      <td className="py-3 px-4 font-bold text-white flex items-center gap-2">
+                      <td className={`py-3 px-4 font-bold flex items-center gap-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                         <span className="w-1.5 h-1.5 rounded-full bg-[#E41919]"></span>
                         <span>{sub.cidr}</span>
                       </td>
-                      <td className="py-3 px-4 text-right text-cyan-400">
+                      <td className={`py-3 px-4 text-right ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>
                         {formatBps(sub.inbound_bps)}
                       </td>
-                      <td className="py-3 px-4 text-right text-emerald-400">
+                      <td className={`py-3 px-4 text-right ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
                         {formatBps(sub.outbound_bps)}
                       </td>
-                      <td className="py-3 px-4 text-right font-bold text-white">
+                      <td className={`py-3 px-4 text-right font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
                         {formatBps(sub.total_bps)}
                       </td>
                       <td className="py-3 px-4 w-48">
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 rounded-full bg-[#0B0F17] overflow-hidden">
+                          <div className={`flex-1 h-2 rounded-full overflow-hidden ${isLight ? 'bg-slate-100' : 'bg-[#0B0F17]'}`}>
                             <div
                               className="h-full bg-[#E41919] rounded-full"
                               style={{ width: `${Math.min(100, sub.percent)}%` }}
                             />
                           </div>
-                          <span className="text-[11px] text-slate-300 w-10 text-right">
+                          <span className={`text-[11px] w-10 text-right ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
                             {sub.percent.toFixed(1)}%
                           </span>
                         </div>
@@ -949,10 +975,10 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
                       <td className="py-3 px-4 text-center">
                         <span
                           style={{
-                            borderColor: hexToRgba(ifaceColor, 0.5),
+                            borderColor: hexToRgba(ifaceColor, isLight ? 0.6 : 0.5),
                             color: ifaceColor,
                           }}
-                          className="inline-block px-2.5 py-0.5 rounded text-[11px] font-semibold bg-[#0B0F17] border"
+                          className={`inline-block px-2.5 py-0.5 rounded text-[11px] font-semibold border ${isLight ? 'bg-slate-50' : 'bg-[#0B0F17]'}`}
                         >
                           {isTransit ? 'IPT · ' : 'IX · '}
                           {sub.dominant_interface}

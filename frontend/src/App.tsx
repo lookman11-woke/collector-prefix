@@ -268,6 +268,7 @@ export default function App() {
         <>
           {/* 2. Top Command & Filter Popover Bar */}
           <FilterBar
+            theme={theme}
             prefixGroups={prefixGroups}
             selectedAsns={selectedAsns}
             selectedPrefixes={selectedPrefixes}
