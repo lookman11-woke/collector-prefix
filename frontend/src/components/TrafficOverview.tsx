@@ -7,6 +7,7 @@ type Props = {
   data: TrafficOverviewResponse | null
   metric: 'traffic' | 'packets'
   timeRange: string
+  theme?: 'dark' | 'light'
 }
 
 function computeUnitScale(peakVal: number, isPackets: boolean) {
@@ -24,7 +25,8 @@ function computeUnitScale(peakVal: number, isPackets: boolean) {
   return { divisor: 1, unit: 'bps', unitShort: '' }
 }
 
-export default function TrafficOverview({ data, metric }: Props) {
+export default function TrafficOverview({ data, metric, theme = 'dark' }: Props) {
+  const isLight = theme === 'light'
   const series = useMemo(() => data?.series || [], [data])
   const summary = data?.summary || {
     current_inbound_bps: 0,
@@ -89,7 +91,7 @@ export default function TrafficOverview({ data, metric }: Props) {
         top: 0,
         right: 25,
         textStyle: {
-          color: '#94A3B8',
+          color: isLight ? '#334155' : '#94A3B8',
           fontSize: 11,
           fontFamily: 'JetBrains Mono, monospace',
         },
@@ -98,12 +100,12 @@ export default function TrafficOverview({ data, metric }: Props) {
       },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(22, 30, 46, 0.96)',
-        borderColor: '#242E42',
+        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.98)' : 'rgba(22, 30, 46, 0.96)',
+        borderColor: isLight ? '#CBD5E1' : '#242E42',
         borderWidth: 1,
         padding: [10, 14],
         textStyle: {
-          color: '#F1F5F9',
+          color: isLight ? '#0F172A' : '#F1F5F9',
           fontSize: 12,
           fontFamily: 'JetBrains Mono, monospace',
         },
@@ -111,18 +113,18 @@ export default function TrafficOverview({ data, metric }: Props) {
           const t = params[0]?.axisValue ?? ''
           const rows = (params || [])
             .map((p: any) => {
-              const color = p.seriesName === 'Inbound (Ingress)' ? '#E41919' : '#FFCE00'
+              const color = p.seriesName === 'Inbound (Ingress)' ? '#E41919' : isLight ? '#D97706' : '#FFCE00'
               return `
                 <div style="display:flex; justify-content:space-between; gap:16px; margin-top:3px;">
                   <span style="color:${color}; font-weight:600;">${p.seriesName}:</span>
-                  <span style="font-weight:700; color:#FFFFFF;">${p.value} ${scale.unit}</span>
+                  <span style="font-weight:700; color:${isLight ? '#0F172A' : '#FFFFFF'};">${p.value} ${scale.unit}</span>
                 </div>
               `
             })
             .join('')
           return `
             <div style="font-size:11px; font-family:JetBrains Mono, monospace;">
-              <div style="color:#64748B; margin-bottom:4px; font-weight:600; border-bottom:1px solid #242E42; padding-bottom:3px;">Time: ${t}</div>
+              <div style="color:${isLight ? '#475569' : '#64748B'}; margin-bottom:4px; font-weight:600; border-bottom:1px solid ${isLight ? '#E2E8F0' : '#242E42'}; padding-bottom:3px;">Time: ${t}</div>
               ${rows}
             </div>
           `
@@ -136,10 +138,10 @@ export default function TrafficOverview({ data, metric }: Props) {
         type: 'category',
         data: times,
         boundaryGap: false,
-        axisLine: { lineStyle: { color: '#242E42' } },
+        axisLine: { lineStyle: { color: isLight ? '#CBD5E1' : '#242E42' } },
         axisTick: { show: false },
         axisLabel: {
-          color: '#64748B',
+          color: isLight ? '#475569' : '#64748B',
           fontSize: 10,
           fontFamily: 'JetBrains Mono, monospace',
           interval: Math.max(1, Math.floor(times.length / 8)),
@@ -150,7 +152,7 @@ export default function TrafficOverview({ data, metric }: Props) {
         type: 'value',
         name: scale.unit,
         nameTextStyle: {
-          color: '#FFCE00',
+          color: isLight ? '#D97706' : '#FFCE00',
           fontSize: 11,
           fontFamily: 'JetBrains Mono, monospace',
           fontWeight: 600,
@@ -159,12 +161,12 @@ export default function TrafficOverview({ data, metric }: Props) {
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
-          color: '#64748B',
+          color: isLight ? '#475569' : '#64748B',
           fontSize: 10,
           fontFamily: 'JetBrains Mono, monospace',
           formatter: (v: number) => `${v}${scale.unitShort}`,
         },
-        splitLine: { lineStyle: { color: 'rgba(36, 46, 66, 0.6)', type: 'dashed' } },
+        splitLine: { lineStyle: { color: isLight ? 'rgba(203, 213, 225, 0.6)' : 'rgba(36, 46, 66, 0.6)', type: 'dashed' } },
       },
       series: [
         {
@@ -194,7 +196,7 @@ export default function TrafficOverview({ data, metric }: Props) {
           data: outSeries,
           smooth: 0.35,
           symbol: 'none',
-          lineStyle: { color: '#FFCE00', width: 2 },
+          lineStyle: { color: isLight ? '#D97706' : '#FFCE00', width: 2 },
           areaStyle: {
             color: {
               type: 'linear',
@@ -203,15 +205,15 @@ export default function TrafficOverview({ data, metric }: Props) {
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: 'rgba(255, 206, 0, 0.22)' },
-                { offset: 1, color: 'rgba(255, 206, 0, 0.01)' },
+                { offset: 0, color: isLight ? 'rgba(217, 119, 6, 0.22)' : 'rgba(255, 206, 0, 0.22)' },
+                { offset: 1, color: isLight ? 'rgba(217, 119, 6, 0.01)' : 'rgba(255, 206, 0, 0.01)' },
               ],
             },
           },
         },
       ],
     }
-  }, [times, inSeries, outSeries, scale, hasData])
+  }, [times, inSeries, outSeries, scale, hasData, isLight])
 
   return (
     <div className="bg-[#161E2E] border border-[#242E42] rounded-xl p-4 flex flex-col w-full">

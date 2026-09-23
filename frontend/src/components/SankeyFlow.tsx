@@ -9,6 +9,7 @@ type Props = {
   topN: number
   onTopNChange: (n: number) => void
   onRefresh?: () => void
+  theme?: 'dark' | 'light'
 }
 
 const TOP_N_OPTIONS = [
@@ -64,7 +65,9 @@ export default function SankeyFlow({
   topN,
   onTopNChange,
   onRefresh,
+  theme = 'dark',
 }: Props) {
+  const isLight = theme === 'light'
   const [directionFilter, setDirectionFilter] = useState<'both' | 'inbound' | 'outbound'>('both')
 
   const rawNodes = useMemo(() => data?.nodes || [], [data])
@@ -144,12 +147,12 @@ export default function SankeyFlow({
       animationDuration: 600,
       tooltip: {
         trigger: 'item',
-        backgroundColor: 'rgba(22, 30, 46, 0.96)',
-        borderColor: '#242E42',
+        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.98)' : 'rgba(22, 30, 46, 0.96)',
+        borderColor: isLight ? '#CBD5E1' : '#242E42',
         borderWidth: 1,
         padding: [10, 14],
         textStyle: {
-          color: '#F1F5F9',
+          color: isLight ? '#0F172A' : '#F1F5F9',
           fontSize: 12,
           fontFamily: 'JetBrains Mono, monospace',
         },
@@ -159,8 +162,8 @@ export default function SankeyFlow({
             const tgt = (params.data?.target || '').replace('\n', ' ')
             return `
               <div style="font-size:12px; font-family:JetBrains Mono, monospace;">
-                <div style="color:#64748B; margin-bottom:4px; font-size:11px;">${src} → ${tgt}</div>
-                <div style="color:#FFCE00; font-weight:700; font-size:13px;">${formatBps(params.data?.value || 0)}</div>
+                <div style="color:${isLight ? '#475569' : '#64748B'}; margin-bottom:4px; font-size:11px;">${src} → ${tgt}</div>
+                <div style="color:${isLight ? '#D97706' : '#FFCE00'}; font-weight:700; font-size:13px;">${formatBps(params.data?.value || 0)}</div>
               </div>
             `
           }
@@ -178,18 +181,18 @@ export default function SankeyFlow({
               ? 'Inbound Origin Peer'
               : 'Outbound Destination Peer'
           const tierColor =
-            tier === 'local' ? '#E41919' : tier === 'inbound' ? '#38BDF8' : '#FFCE00'
+            tier === 'local' ? '#E41919' : tier === 'inbound' ? '#38BDF8' : isLight ? '#D97706' : '#FFCE00'
 
           return `
             <div style="font-size:12px; font-family:JetBrains Mono, monospace; min-width:220px; padding:2px;">
               <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px;">
-                <span style="color:#FFCE00; font-weight:700; font-size:13px;">${label}</span>
+                <span style="color:${isLight ? '#D97706' : '#FFCE00'}; font-weight:700; font-size:13px;">${label}</span>
                 <span style="font-size:10px; color:${tierColor}; border:1px solid ${tierColor}40; padding:1px 6px; border-radius:9999px; background:${tierColor}15;">${tierLabel}</span>
               </div>
-              ${org ? `<div style="color:#CBD5E1; font-size:11px; margin-bottom:6px; line-height:1.35;">${org}</div>` : ''}
+              ${org ? `<div style="color:${isLight ? '#475569' : '#CBD5E1'}; font-size:11px; margin-bottom:6px; line-height:1.35;">${org}</div>` : ''}
               ${
                 totalVolume
-                  ? `<div style="color:#64748B; font-size:11px; border-top:1px solid #242E42; padding-top:4px;">Aggregated Bandwidth: <span style="color:#FFFFFF; font-weight:700;">${totalVolume}</span></div>`
+                  ? `<div style="color:${isLight ? '#64748B' : '#64748B'}; font-size:11px; border-top:1px solid ${isLight ? '#E2E8F0' : '#242E42'}; padding-top:4px;">Aggregated Bandwidth: <span style="color:${isLight ? '#0F172A' : '#FFFFFF'}; font-weight:700;">${totalVolume}</span></div>`
                   : ''
               }
             </div>
@@ -208,7 +211,10 @@ export default function SankeyFlow({
             else if (isSource) depth = 0
             else depth = 2
 
-            const color = nodeColorMap.get(n.name) || '#E41919'
+            let color = nodeColorMap.get(n.name) || '#E41919'
+            if (isLight && n.name === 'AS149929') {
+              color = '#D97706'
+            }
 
             return {
               name: n.name,
@@ -233,7 +239,7 @@ export default function SankeyFlow({
               value: l.value,
               lineStyle: {
                 color: srcColor,
-                opacity: 0.38,
+                opacity: isLight ? 0.45 : 0.38,
                 curveness: 0.5,
               },
             }
@@ -253,7 +259,7 @@ export default function SankeyFlow({
           bottom: 24,
           label: {
             show: true,
-            color: '#CBD5E1',
+            color: isLight ? '#0F172A' : '#CBD5E1',
             fontSize: 11,
             fontFamily: 'JetBrains Mono, monospace',
             fontWeight: 600,
@@ -262,7 +268,7 @@ export default function SankeyFlow({
         },
       ],
     }
-  }, [sortedNodes, filteredLinks, localAsns, nodeColorMap, hasData])
+  }, [sortedNodes, filteredLinks, localAsns, nodeColorMap, hasData, isLight])
 
   return (
     <div className="bg-[#161E2E] border border-[#242E42] rounded-xl p-4 flex flex-col w-full">

@@ -2,15 +2,21 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import ReactECharts from 'echarts-for-react'
 import {
   getInterfaceReports,
+  getTrafficOverview,
+  getAsnFlow,
   type Interface,
   type InterfaceReportResponse,
   type InterfaceReportItem,
   type InterfaceReportPoint,
+  type TrafficOverviewResponse,
+  type AsnFlowResponse,
 } from '../api/client'
-import { formatMetric } from '../data/mock'
+import { formatMetric, ASN_FLOW } from '../data/mock'
 
 type Props = {
   interfaces: Interface[]
+  theme?: 'dark' | 'light'
+  onThemeChange?: (theme: 'dark' | 'light') => void
 }
 
 function computeUnitScale(peakVal: number) {
@@ -19,6 +25,17 @@ function computeUnitScale(peakVal: number) {
   if (peakVal >= 1e6) return { divisor: 1e6, unit: 'Mbps', unitShort: 'M' }
   if (peakVal >= 1e3) return { divisor: 1e3, unit: 'Kbps', unitShort: 'K' }
   return { divisor: 1, unit: 'bps', unitShort: '' }
+}
+
+const setupSvgViewBox = (chartInstance: any) => {
+  const dom = chartInstance?.getDom?.()
+  if (!dom) return
+  const svg = dom.querySelector('svg')
+  if (svg) {
+    const w = svg.getAttribute('width') || String(dom.clientWidth || 1200)
+    const h = svg.getAttribute('height') || String(dom.clientHeight || 480)
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+  }
 }
 
 function InterfaceTimelineChart({
@@ -202,8 +219,539 @@ function InterfaceTimelineChart({
   }, [times, inSeries, outSeries, scale, isLight])
 
   return (
+    <div className="w-full h-[200px]">
+      <ReactECharts
+        option={option}
+        style={{ width: '100%', height: '200px' }}
+        opts={{ renderer: 'svg', useViewBox: true } as any}
+        notMerge
+        onChartReady={setupSvgViewBox}
+      />
+    </div>
+  )
+}
+
+function OverallTrafficTimelineChart({
+  series,
+  timeRange,
+  theme = 'dark',
+}: {
+  series: { timestamp: string; inbound_bps: number; outbound_bps: number }[]
+  timeRange: string
+  theme?: 'dark' | 'light'
+}) {
+  const isLight = theme === 'light'
+
+  const times = useMemo(() => {
+    return series.map((s) => {
+      const d = new Date(s.timestamp)
+      if (timeRange === '24h') {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+      return `${d.toLocaleDateString([], { month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    })
+  }, [series, timeRange])
+
+  const peakInWindow = useMemo(() => {
+    if (series.length === 0) return 0
+    let max = 0
+    for (const s of series) {
+      if (s.inbound_bps > max) max = s.inbound_bps
+      if (s.outbound_bps > max) max = s.outbound_bps
+    }
+    return max
+  }, [series])
+
+  const scale = useMemo(() => computeUnitScale(peakInWindow), [peakInWindow])
+
+  const inSeries = useMemo(() => {
+    return series.map((s) => parseFloat((s.inbound_bps / scale.divisor).toFixed(2)))
+  }, [series, scale.divisor])
+
+  const outSeries = useMemo(() => {
+    return series.map((s) => parseFloat((s.outbound_bps / scale.divisor).toFixed(2)))
+  }, [series, scale.divisor])
+
+  const option = useMemo(() => {
+    return {
+      backgroundColor: 'transparent',
+      animation: false,
+      grid: {
+        left: 55,
+        right: 20,
+        top: 30,
+        bottom: 25,
+      },
+      legend: {
+        show: true,
+        top: 2,
+        right: 20,
+        textStyle: {
+          color: isLight ? '#334155' : '#94A3B8',
+          fontSize: 11,
+          fontFamily: 'JetBrains Mono, monospace',
+        },
+        itemWidth: 12,
+        itemHeight: 8,
+      },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.98)' : 'rgba(22, 30, 46, 0.96)',
+        borderColor: isLight ? '#CBD5E1' : '#242E42',
+        borderWidth: 1,
+        padding: [8, 12],
+        textStyle: {
+          color: isLight ? '#0F172A' : '#F1F5F9',
+          fontSize: 11,
+          fontFamily: 'JetBrains Mono, monospace',
+        },
+        formatter: (params: any[]) => {
+          const t = params[0]?.axisValue ?? ''
+          const rows = (params || [])
+            .map((p: any) => {
+              const color = p.seriesName === 'Total Inbound' ? '#E41919' : isLight ? '#D97706' : '#FFCE00'
+              return `
+                <div style="display:flex; justify-content:space-between; gap:14px; margin-top:2px;">
+                  <span style="color:${color}; font-weight:600;">${p.seriesName}:</span>
+                  <span style="font-weight:700; color:${isLight ? '#0F172A' : '#FFFFFF'};">${p.value} ${scale.unit}</span>
+                </div>
+              `
+            })
+            .join('')
+          return `
+            <div style="font-size:11px; font-family:JetBrains Mono, monospace;">
+              <div style="color:${isLight ? '#475569' : '#64748B'}; margin-bottom:4px; font-weight:600; border-bottom:1px solid ${isLight ? '#E2E8F0' : '#242E42'}; padding-bottom:2px;">Time: ${t}</div>
+              ${rows}
+            </div>
+          `
+        },
+        axisPointer: {
+          type: 'line',
+          lineStyle: { color: isLight ? 'rgba(228, 25, 25, 0.5)' : 'rgba(228, 25, 25, 0.4)', type: 'dashed', width: 1 },
+        },
+      },
+      xAxis: {
+        type: 'category',
+        data: times,
+        boundaryGap: false,
+        axisLine: { lineStyle: { color: isLight ? '#CBD5E1' : '#242E42' } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: isLight ? '#475569' : '#64748B',
+          fontSize: 10,
+          fontFamily: 'JetBrains Mono, monospace',
+          interval: Math.max(1, Math.floor(times.length / 6)),
+        },
+        splitLine: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        name: scale.unit,
+        nameTextStyle: {
+          color: isLight ? '#D97706' : '#FFCE00',
+          fontSize: 10,
+          fontFamily: 'JetBrains Mono, monospace',
+          fontWeight: 600,
+          padding: [0, 0, 2, 0],
+        },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+          color: isLight ? '#475569' : '#64748B',
+          fontSize: 10,
+          fontFamily: 'JetBrains Mono, monospace',
+          formatter: (v: number) => `${v}${scale.unitShort}`,
+        },
+        splitLine: { lineStyle: { color: isLight ? 'rgba(203, 213, 225, 0.6)' : 'rgba(36, 46, 66, 0.6)', type: 'dashed' } },
+      },
+      series: [
+        {
+          name: 'Total Inbound',
+          type: 'line',
+          data: inSeries,
+          smooth: 0.3,
+          symbol: 'none',
+          lineStyle: { color: '#E41919', width: 2 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: isLight ? 'rgba(228, 25, 25, 0.25)' : 'rgba(228, 25, 25, 0.32)' },
+                { offset: 1, color: isLight ? 'rgba(228, 25, 25, 0.02)' : 'rgba(228, 25, 25, 0.01)' },
+              ],
+            },
+          },
+        },
+        {
+          name: 'Total Outbound',
+          type: 'line',
+          data: outSeries,
+          smooth: 0.3,
+          symbol: 'none',
+          lineStyle: { color: isLight ? '#D97706' : '#FFCE00', width: 2 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: isLight ? 'rgba(217, 119, 6, 0.22)' : 'rgba(255, 206, 0, 0.28)' },
+                { offset: 1, color: isLight ? 'rgba(217, 119, 6, 0.02)' : 'rgba(255, 206, 0, 0.01)' },
+              ],
+            },
+          },
+        },
+      ],
+    }
+  }, [times, inSeries, outSeries, scale, isLight])
+
+  return (
     <div className="w-full h-[220px]">
-      <ReactECharts option={option} style={{ width: '100%', height: '100%' }} notMerge />
+      <ReactECharts
+        option={option}
+        style={{ width: '100%', height: '100%' }}
+        opts={{ renderer: 'svg', useViewBox: true } as any}
+        notMerge
+        onChartReady={setupSvgViewBox}
+      />
+    </div>
+  )
+}
+
+// Inbound Source ASNs Palette (Sky Blue, Indigo, Emerald, Pink, Purple, Amber, Teal, Blue)
+const SANKEY_INBOUND_PALETTE = [
+  '#38BDF8',
+  '#818CF8',
+  '#34D399',
+  '#F472B6',
+  '#A78BFA',
+  '#FBBF24',
+  '#2DD4BF',
+  '#60A5FA',
+  '#C084FC',
+  '#4ADE80',
+  '#38E5FF',
+  '#E879F9',
+]
+
+// Outbound Destination ASNs Palette (Neon Orange, Coral, Rose, Gold Amber, Magenta, Ruby)
+const SANKEY_OUTBOUND_PALETTE = [
+  '#FF7A00',
+  '#FB923C',
+  '#F87171',
+  '#F43F5E',
+  '#FB7185',
+  '#F59E0B',
+  '#EF4444',
+  '#EA580C',
+  '#D946EF',
+  '#E11D48',
+  '#F97316',
+  '#BE185D',
+]
+
+// Local internal ASNs color map
+const DEFAULT_LOCAL_ASNS = ['AS59278', 'AS149929', 'AS149682', 'AS153143', 'AS15021']
+
+const SANKEY_LOCAL_ASN_COLORS: Record<string, string> = {
+  AS59278: '#E41919',  // VNT Crimson Red
+  AS149929: '#FFCE00', // Nomaden Electric Gold
+  AS15021: '#A855F7',  // Purple Violet
+  AS149682: '#F97316', // Vibrant Orange
+  AS153143: '#EC4899', // Magenta Pink
+}
+
+function MacroPeeringSankeyChart({
+  sankeyData,
+  theme = 'dark',
+}: {
+  sankeyData: AsnFlowResponse | null
+  theme?: 'dark' | 'light'
+}) {
+  const isLight = theme === 'light'
+
+  const { nodes, links } = useMemo(() => {
+    // 1. Source nodes & links directly from sankeyData or fallback to mock ASN_FLOW
+    const rawNodes =
+      sankeyData && Array.isArray(sankeyData.nodes) && sankeyData.nodes.length > 0
+        ? sankeyData.nodes
+        : ASN_FLOW.nodes
+    const rawLinks =
+      sankeyData && Array.isArray(sankeyData.links) && sankeyData.links.length > 0
+        ? sankeyData.links
+        : ASN_FLOW.links
+
+    // 2. Classify nodes into 3 tiers matching SankeyFlow.tsx
+    const inbound = rawNodes.filter((n) => n.tier === 'inbound')
+    const local = rawNodes.filter((n) => n.tier === 'local' || DEFAULT_LOCAL_ASNS.includes(n.name))
+    const outbound = rawNodes.filter((n) => n.tier === 'outbound' && !DEFAULT_LOCAL_ASNS.includes(n.name))
+
+    // 3. Sort strictly descending by volume, capping inbound & outbound to top 8
+    const sortedInbound = [...inbound]
+      .sort((a, b) => (b.total || 0) - (a.total || 0))
+      .slice(0, 8)
+    const sortedLocal = [...local]
+      .sort((a, b) => (b.total || 0) - (a.total || 0))
+    const sortedOutbound = [...outbound]
+      .sort((a, b) => (b.total || 0) - (a.total || 0))
+      .slice(0, 8)
+
+    const activeNodeNames = new Set([
+      ...sortedInbound.map((n) => n.name),
+      ...sortedLocal.map((n) => n.name),
+      ...sortedOutbound.map((n) => n.name),
+    ])
+
+    // 4. Filter links connecting active nodes with positive volume
+    const validLinks = rawLinks.filter((l) => {
+      return l.value > 0 && activeNodeNames.has(l.source) && activeNodeNames.has(l.target)
+    })
+
+    // 5. Retain only nodes that participate in valid links to avoid orphan nodes
+    const connectedNodeNames = new Set<string>()
+    validLinks.forEach((l) => {
+      connectedNodeNames.add(l.source)
+      connectedNodeNames.add(l.target)
+    })
+
+    const finalInbound = sortedInbound.filter((n) => connectedNodeNames.has(n.name))
+    const finalLocal = sortedLocal.filter((n) => connectedNodeNames.has(n.name))
+    const finalOutbound = sortedOutbound.filter((n) => connectedNodeNames.has(n.name))
+
+    // 6. Assign color mapping
+    const nodeColorMap = new Map<string, string>()
+    finalInbound.forEach((n, idx) => {
+      nodeColorMap.set(n.name, SANKEY_INBOUND_PALETTE[idx % SANKEY_INBOUND_PALETTE.length])
+    })
+    finalLocal.forEach((n) => {
+      const col = isLight && n.name === 'AS149929' ? '#D97706' : (SANKEY_LOCAL_ASN_COLORS[n.name] || '#E41919')
+      nodeColorMap.set(n.name, col)
+    })
+    finalOutbound.forEach((n, idx) => {
+      nodeColorMap.set(n.name, SANKEY_OUTBOUND_PALETTE[idx % SANKEY_OUTBOUND_PALETTE.length])
+    })
+
+    // 7. Build ECharts node items with explicit depths
+    const echartsNodes = [
+      ...finalInbound.map((n) => ({
+        name: n.name,
+        nodeLabel: n.label || n.name,
+        label: {
+          position: 'right' as const,
+          distance: 8,
+        },
+        org: n.org || '',
+        total: n.total || 0,
+        tier: 'inbound',
+        depth: 0,
+        itemStyle: {
+          color: nodeColorMap.get(n.name) || '#38BDF8',
+          borderColor: 'transparent',
+          borderWidth: 0,
+          borderRadius: 3,
+        },
+      })),
+      ...finalLocal.map((n) => ({
+        name: n.name,
+        nodeLabel: n.label || n.name,
+        label: {
+          position: 'right' as const,
+          distance: 8,
+        },
+        org: n.org || '',
+        total: n.total || 0,
+        tier: 'local',
+        depth: 1,
+        itemStyle: {
+          color: nodeColorMap.get(n.name) || '#E41919',
+          borderColor: 'transparent',
+          borderWidth: 0,
+          borderRadius: 3,
+        },
+      })),
+      ...finalOutbound.map((n) => ({
+        name: n.name,
+        nodeLabel: n.label || n.name,
+        label: {
+          position: 'left' as const,
+          distance: 8,
+        },
+        org: n.org || '',
+        total: n.total || 0,
+        tier: 'outbound',
+        depth: 2,
+        itemStyle: {
+          color: nodeColorMap.get(n.name) || '#FF7A00',
+          borderColor: 'transparent',
+          borderWidth: 0,
+          borderRadius: 3,
+        },
+      })),
+    ]
+
+    const echartsLinks = validLinks.map((l) => {
+      const srcColor = nodeColorMap.get(l.source) || '#E41919'
+      return {
+        source: l.source,
+        target: l.target,
+        value: l.value,
+        lineStyle: {
+          color: srcColor,
+          opacity: isLight ? 0.40 : 0.35,
+          curveness: 0.5,
+        },
+      }
+    })
+
+    return {
+      nodes: echartsNodes,
+      links: echartsLinks,
+    }
+  }, [sankeyData, isLight])
+
+  const hasData = nodes.length > 0 && links.length > 0
+
+  const option = useMemo(() => {
+    if (!hasData) {
+      return {
+        backgroundColor: 'transparent',
+        series: [],
+      }
+    }
+
+    return {
+      backgroundColor: 'transparent',
+      animation: false,
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.98)' : 'rgba(22, 30, 46, 0.96)',
+        borderColor: isLight ? '#CBD5E1' : '#242E42',
+        borderWidth: 1,
+        padding: [8, 12],
+        textStyle: {
+          color: isLight ? '#0F172A' : '#F1F5F9',
+          fontSize: 11,
+          fontFamily: 'JetBrains Mono, monospace',
+        },
+        formatter: (params: any) => {
+          if (params.dataType === 'edge') {
+            const src = (params.data?.source || '').replace('\n', ' ')
+            const tgt = (params.data?.target || '').replace('\n', ' ')
+            const val = params.data?.value || 0
+            return `
+              <div style="font-size:11px; font-family:JetBrains Mono, monospace;">
+                <div style="color:${isLight ? '#475569' : '#64748B'}; margin-bottom:4px;">${src} → ${tgt}</div>
+                <div style="color:${isLight ? '#D97706' : '#FFCE00'}; font-weight:700; font-size:12px;">${formatMetric(val, 'traffic')}</div>
+              </div>
+            `
+          }
+          const data = params.data || {}
+          const label = data.nodeLabel || (typeof data.label === 'string' ? data.label : '') || params.name || ''
+          const org = data.org || ''
+          const totalVolume = data.total ? formatMetric(data.total, 'traffic') : ''
+          const tier = data.tier || ''
+
+          const tierLabel =
+            tier === 'local'
+              ? 'Local ISP Core'
+              : tier === 'inbound'
+              ? 'Inbound Origin Peer'
+              : 'Outbound Destination Peer'
+          const tierColor =
+            tier === 'local'
+              ? '#E41919'
+              : tier === 'inbound'
+              ? (isLight ? '#0284C7' : '#38BDF8')
+              : (isLight ? '#D97706' : '#FFCE00')
+
+          return `
+            <div style="font-size:11px; font-family:JetBrains Mono, monospace; min-width:200px; padding:2px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px;">
+                <span style="color:${isLight ? '#0F172A' : '#FFFFFF'}; font-weight:700; font-size:12px;">${label}</span>
+                <span style="font-size:9.5px; color:${tierColor}; border:1px solid ${tierColor}40; padding:1px 5px; border-radius:9999px; background:${tierColor}15;">${tierLabel}</span>
+              </div>
+              ${org ? `<div style="color:${isLight ? '#475569' : '#94A3B8'}; font-size:10px; margin-bottom:4px; line-height:1.35;">${org}</div>` : ''}
+              ${
+                totalVolume
+                  ? `<div style="color:${isLight ? '#64748B' : '#94A3B8'}; font-size:10px; border-top:1px solid ${isLight ? '#E2E8F0' : '#242E42'}; padding-top:4px;">Volume: <span style="color:${isLight ? '#0F172A' : '#FFFFFF'}; font-weight:700;">${totalVolume}</span></div>`
+                  : ''
+              }
+            </div>
+          `
+        },
+      },
+      series: [
+        {
+          type: 'sankey',
+          data: nodes,
+          links: links,
+          emphasis: {
+            focus: 'adjacency',
+            lineStyle: { opacity: 0.85 },
+          },
+          nodeWidth: 18,
+          nodeGap: 18,
+          orient: 'horizontal',
+          nodeAlign: 'justify',
+          layoutIterations: 0,
+          left: 20,
+          right: 30,
+          top: 24,
+          bottom: 24,
+          label: {
+            show: true,
+            color: isLight ? '#0F172A' : '#CBD5E1',
+            fontSize: 10.5,
+            fontFamily: 'JetBrains Mono, monospace',
+            fontWeight: 600,
+            formatter: (p: any) => {
+              const org = p.data?.org
+              const displayName = (p.data?.nodeLabel || p.name || '').replace(' (Out)', '')
+              if (org) {
+                const shortOrg = org.length > 20 ? org.slice(0, 18) + '…' : org
+                return `${displayName}\n{sub|${shortOrg}}`
+              }
+              return displayName
+            },
+            rich: {
+              sub: {
+                fontSize: 8.5,
+                color: isLight ? '#475569' : '#94A3B8',
+                lineHeight: 12,
+              },
+            },
+          },
+          lineStyle: {
+            curveness: 0.5,
+          },
+        },
+      ],
+    }
+  }, [nodes, links, isLight, hasData])
+
+  if (!hasData) {
+    return (
+      <div className={`w-full h-[480px] flex items-center justify-center font-mono text-xs ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
+        No ASN flow data available for the selected interface scope.
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full h-[480px]">
+      <ReactECharts
+        option={option}
+        style={{ width: '100%', height: '480px' }}
+        opts={{ renderer: 'svg', useViewBox: true } as any}
+        notMerge
+        onChartReady={setupSvgViewBox}
+      />
     </div>
   )
 }
@@ -270,7 +818,7 @@ function generateCSV(data: InterfaceReportResponse) {
   return lines.join('\r\n')
 }
 
-export default function ReportView({ interfaces }: Props) {
+export default function ReportView({ interfaces, theme, onThemeChange }: Props) {
   const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('24h')
   const [selectedInterfaces, setSelectedInterfaces] = useState<Set<string>>(
     () => new Set(interfaces.map((i) => i.id))
@@ -278,22 +826,54 @@ export default function ReportView({ interfaces }: Props) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [reportData, setReportData] = useState<InterfaceReportResponse | null>(null)
+  const [overallTraffic, setOverallTraffic] = useState<TrafficOverviewResponse | null>(null)
+  const [sankeyData, setSankeyData] = useState<AsnFlowResponse | null>(null)
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait')
-  const [printTheme, setPrintTheme] = useState<'dark' | 'light'>('dark')
+  const [printTheme, setPrintTheme] = useState<'dark' | 'light'>(() => theme || 'dark')
+
+  useEffect(() => {
+    if (theme) {
+      setPrintTheme(theme)
+    }
+  }, [theme])
+
+  const handleThemeChange = (newTheme: 'dark' | 'light') => {
+    setPrintTheme(newTheme)
+    onThemeChange?.(newTheme)
+  }
 
   const fetchReport = useCallback(async () => {
     setLoading(true)
     try {
       const ifaceList = Array.from(selectedInterfaces)
-      const data = await getInterfaceReports(
-        {
+      const [data, trafficRes, flowRes] = await Promise.all([
+        getInterfaceReports(
+          {
+            time_range: timeRange,
+            interfaces: ifaceList,
+          },
+          interfaces
+        ),
+        getTrafficOverview({
           time_range: timeRange,
-          interfaces: ifaceList,
-        },
-        interfaces
-      )
+          metric: 'traffic',
+          direction: 'both',
+          selected_interfaces: ifaceList,
+          selected_asns: [],
+          selected_prefixes: [],
+        }),
+        getAsnFlow({
+          time_range: timeRange,
+          selected_interfaces: ifaceList,
+          selected_asns: [],
+          selected_prefixes: [],
+          top_n: 8,
+        }),
+      ])
       setReportData(data)
+      setOverallTraffic(trafficRes)
+      setSankeyData(flowRes)
       setGeneratedAt(new Date())
     } finally {
       setLoading(false)
@@ -302,15 +882,35 @@ export default function ReportView({ interfaces }: Props) {
 
   useEffect(() => {
     let active = true
-    void getInterfaceReports(
-      {
+    const ifaceList = Array.from(selectedInterfaces)
+    void Promise.all([
+      getInterfaceReports(
+        {
+          time_range: timeRange,
+          interfaces: ifaceList,
+        },
+        interfaces
+      ),
+      getTrafficOverview({
         time_range: timeRange,
-        interfaces: Array.from(selectedInterfaces),
-      },
-      interfaces
-    ).then((data) => {
+        metric: 'traffic',
+        direction: 'both',
+        selected_interfaces: ifaceList,
+        selected_asns: [],
+        selected_prefixes: [],
+      }),
+      getAsnFlow({
+        time_range: timeRange,
+        selected_interfaces: ifaceList,
+        selected_asns: [],
+        selected_prefixes: [],
+        top_n: 8,
+      }),
+    ]).then(([rep, traf, flow]) => {
       if (active) {
-        setReportData(data)
+        setReportData(rep)
+        setOverallTraffic(traf)
+        setSankeyData(flow)
         setGeneratedAt(new Date())
       }
     })
@@ -318,6 +918,28 @@ export default function ReportView({ interfaces }: Props) {
       active = false
     }
   }, [timeRange, selectedInterfaces, interfaces])
+
+  const ensureViewBoxes = () => {
+    document.querySelectorAll<SVGElement>('.echarts-for-react > div > svg').forEach((svg) => {
+      const w = svg.getAttribute('width') || String(svg.parentElement?.clientWidth || 1200)
+      const h = svg.getAttribute('height') || String(svg.parentElement?.clientHeight || 480)
+      if (w && h) {
+        svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+      }
+    })
+  }
+
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      ensureViewBoxes()
+      window.dispatchEvent(new Event('resize'))
+      ensureViewBoxes()
+    }
+    window.addEventListener('beforeprint', handleBeforePrint)
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint)
+    }
+  }, [])
 
   const handleToggleInterface = (id: string) => {
     setSelectedInterfaces((prev) => {
@@ -362,6 +984,7 @@ export default function ReportView({ interfaces }: Props) {
   }
 
   const handlePrint = () => {
+    ensureViewBoxes()
     window.print()
   }
 
@@ -380,6 +1003,28 @@ export default function ReportView({ interfaces }: Props) {
       { totalPeakIn: 0, totalPeakOut: 0, totalAvgIn: 0, totalAvgOut: 0 }
     )
   }, [reportData])
+
+  const overallSeries = useMemo(() => {
+    if (overallTraffic && overallTraffic.series && overallTraffic.series.length > 0) {
+      return overallTraffic.series
+    }
+    if (!reportData || reportData.reports.length === 0) return []
+    const firstSeries = reportData.reports[0].series
+    const aggregated: { timestamp: string; inbound_bps: number; outbound_bps: number }[] = []
+    for (let i = 0; i < firstSeries.length; i++) {
+      const timestamp = firstSeries[i].timestamp
+      let inBps = 0
+      let outBps = 0
+      for (const r of reportData.reports) {
+        if (r.series[i]) {
+          inBps += r.series[i].inbound_bps
+          outBps += r.series[i].outbound_bps
+        }
+      }
+      aggregated.push({ timestamp, inbound_bps: inBps, outbound_bps: outBps })
+    }
+    return aggregated
+  }, [overallTraffic, reportData])
 
   const isLight = printTheme === 'light'
 
@@ -428,6 +1073,22 @@ export default function ReportView({ interfaces }: Props) {
               border: 1px solid #242E42 !important;
             `}
           }
+          .report-sankey-page {
+            page-break-before: always !important;
+            break-before: page !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            margin-bottom: 0 !important;
+            box-shadow: none !important;
+            ${isLight ? `
+              background-color: #FFFFFF !important;
+              border: 1px solid #CBD5E1 !important;
+              color: #0F172A !important;
+            ` : `
+              background-color: #161E2E !important;
+              border: 1px solid #242E42 !important;
+            `}
+          }
           .report-card {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
@@ -448,9 +1109,42 @@ export default function ReportView({ interfaces }: Props) {
             page-break-after: auto !important;
             break-after: auto !important;
           }
+          .cover-table-container {
+            overflow: visible !important;
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+          .chart-panel, .asn-panel {
+            min-width: 0 !important;
+            overflow: hidden !important;
+          }
+          .chart-panel canvas,
+          .sankey-panel canvas,
+          .overall-chart-panel canvas {
+            max-width: 100% !important;
+          }
+          svg.w-4, svg.w-3\\.5, svg.w-5, .w-4 > svg {
+            width: 1rem !important;
+            height: 1rem !important;
+            max-width: 1rem !important;
+            min-width: 1rem !important;
+          }
+          .echarts-for-react,
+          .echarts-for-react > div {
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          .echarts-for-react > div > svg {
+            width: 100% !important;
+            height: auto !important;
+            max-width: 100% !important;
+            display: block !important;
+          }
           /* Theme-specific styles for sub-boxes, tables, and borders */
           ${isLight ? `
-            .metric-box, .chart-panel, .asn-panel, .cover-table-container {
+            .metric-box, .chart-panel, .asn-panel, .cover-table-container, .overall-chart-panel, .sankey-panel {
               background-color: #F8FAFC !important;
               border-color: #CBD5E1 !important;
             }
@@ -617,7 +1311,7 @@ export default function ReportView({ interfaces }: Props) {
             <span className="text-[10px] font-mono text-slate-400 px-1.5 uppercase font-semibold">Theme:</span>
             <button
               type="button"
-              onClick={() => setPrintTheme('dark')}
+              onClick={() => handleThemeChange('dark')}
               className={`px-2.5 py-1 text-xs font-mono font-medium rounded transition-all ${
                 printTheme === 'dark'
                   ? 'bg-[#E41919] text-white shadow-sm shadow-[#E41919]/40'
@@ -628,7 +1322,7 @@ export default function ReportView({ interfaces }: Props) {
             </button>
             <button
               type="button"
-              onClick={() => setPrintTheme('light')}
+              onClick={() => handleThemeChange('light')}
               className={`px-2.5 py-1 text-xs font-mono font-medium rounded transition-all ${
                 printTheme === 'light'
                   ? 'bg-[#E41919] text-white shadow-sm shadow-[#E41919]/40'
@@ -758,9 +1452,36 @@ export default function ReportView({ interfaces }: Props) {
           </div>
         </div>
 
+        {/* Aggregate Network Bandwidth Timeline */}
+        {overallSeries.length > 0 && (
+          <div className={`overall-chart-panel flex flex-col p-3.5 sm:p-4 rounded-xl border mt-1 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <svg className={`w-4 h-4 ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+                <span className={`text-xs font-mono font-bold ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>
+                  Aggregate Network Bandwidth Timeline
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] font-mono">
+                <span className="flex items-center gap-1 text-[#E41919]">
+                  <span className="w-2 h-2 rounded-full bg-[#E41919]" />
+                  Total Inbound
+                </span>
+                <span className={`flex items-center gap-1 ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>
+                  <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-amber-500' : 'bg-[#FFCE00]'}`} />
+                  Total Outbound
+                </span>
+              </div>
+            </div>
+            <OverallTrafficTimelineChart series={overallSeries} timeRange={timeRange} theme={printTheme} />
+          </div>
+        )}
+
         {/* All-Link Executive Summary Table */}
         {reportData && reportData.reports.length > 0 && (
-          <div className={`cover-table-container overflow-x-auto rounded-xl border p-4 mt-2 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
+          <div className={`cover-table-container overflow-x-auto rounded-xl border p-4 print:p-2.5 mt-2 ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <svg className={`w-4 h-4 ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -775,16 +1496,16 @@ export default function ReportView({ interfaces }: Props) {
               </span>
             </div>
 
-            <table className="w-full text-left text-xs font-mono border-collapse">
+            <table className="w-full text-left text-xs font-mono print:text-[9px] print:font-mono border-collapse">
               <thead>
-                <tr className={`border-b text-[10px] uppercase ${isLight ? 'border-slate-300 text-slate-500' : 'border-[#242E42] text-slate-500'}`}>
-                  <th className="py-2 px-3">Interface</th>
-                  <th className="py-2 px-2 text-center">Type</th>
-                  <th className="py-2 px-3 text-right">Peak Inbound</th>
-                  <th className="py-2 px-3 text-right">Peak Outbound</th>
-                  <th className="py-2 px-3 text-right">Avg Inbound</th>
-                  <th className="py-2 px-3 text-right">Avg Outbound</th>
-                  <th className="py-2 px-3">Top Source ASN (#1 Talker)</th>
+                <tr className={`border-b text-[10px] print:text-[9px] uppercase ${isLight ? 'border-slate-300 text-slate-500' : 'border-[#242E42] text-slate-500'}`}>
+                  <th className="py-2 px-3 print:px-1.5 print:py-1">Interface</th>
+                  <th className="py-2 px-2 print:px-1.5 print:py-1 text-center">Type</th>
+                  <th className="py-2 px-3 print:px-1.5 print:py-1 text-right">Peak Inbound</th>
+                  <th className="py-2 px-3 print:px-1.5 print:py-1 text-right">Peak Outbound</th>
+                  <th className="py-2 px-3 print:px-1.5 print:py-1 text-right">Avg Inbound</th>
+                  <th className="py-2 px-3 print:px-1.5 print:py-1 text-right">Avg Outbound</th>
+                  <th className="py-2 px-3 print:px-1.5 print:py-1">Top Source ASN (#1 Talker)</th>
                 </tr>
               </thead>
               <tbody>
@@ -800,12 +1521,12 @@ export default function ReportView({ interfaces }: Props) {
                           : 'border-[#1E2838]/60 hover:bg-[#161E2E]/60'
                       }`}
                     >
-                      <td className={`py-2 px-3 whitespace-nowrap font-bold ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>
+                      <td className={`py-2 px-3 print:px-1.5 print:py-1 whitespace-nowrap font-bold ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>
                         {report.interface_name}
                       </td>
-                      <td className="py-2 px-2 text-center whitespace-nowrap">
+                      <td className="py-2 px-2 print:px-1.5 print:py-1 text-center whitespace-nowrap">
                         <span
-                          className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded-full font-bold tracking-wider ${
+                          className={`text-[9px] font-mono uppercase px-2 py-0.5 print:px-1 print:py-0.5 rounded-full font-bold tracking-wider ${
                             isTransit
                               ? isLight
                                 ? 'bg-red-100 text-red-700 border border-red-300'
@@ -818,31 +1539,31 @@ export default function ReportView({ interfaces }: Props) {
                           {isTransit ? 'Transit' : 'IX'}
                         </span>
                       </td>
-                      <td className="py-2 px-3 text-right font-bold text-[#E41919] whitespace-nowrap">
+                      <td className="py-2 px-3 print:px-1.5 print:py-1 text-right font-bold text-[#E41919] whitespace-nowrap">
                         ↓ {formatMetric(report.summary.peak_inbound_bps, 'traffic')}
                       </td>
-                      <td className={`py-2 px-3 text-right font-bold whitespace-nowrap ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>
+                      <td className={`py-2 px-3 print:px-1.5 print:py-1 text-right font-bold whitespace-nowrap ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>
                         ↑ {formatMetric(report.summary.peak_outbound_bps, 'traffic')}
                       </td>
-                      <td className={`py-2 px-3 text-right font-medium whitespace-nowrap ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>
+                      <td className={`py-2 px-3 print:px-1.5 print:py-1 text-right font-medium whitespace-nowrap ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>
                         {formatMetric(report.summary.avg_inbound_bps, 'traffic')}
                       </td>
-                      <td className={`py-2 px-3 text-right font-medium whitespace-nowrap ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+                      <td className={`py-2 px-3 print:px-1.5 print:py-1 text-right font-medium whitespace-nowrap ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
                         {formatMetric(report.summary.avg_outbound_bps, 'traffic')}
                       </td>
-                      <td className="py-2 px-3 whitespace-nowrap">
+                      <td className="py-2 px-3 print:px-1.5 print:py-1 whitespace-nowrap">
                         {topAsn ? (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 print:gap-1">
                             <span className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                              AS{topAsn.asn}
+                              {String(topAsn.asn).startsWith('AS') ? topAsn.asn : `AS${topAsn.asn}`}
                             </span>
                             <span
-                              className={`text-[10px] truncate max-w-[120px] sm:max-w-[160px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}
+                              className={`text-[10px] print:text-[8.5px] truncate max-w-[110px] print:max-w-[85px] sm:max-w-[160px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}
                               title={topAsn.org}
                             >
                               {topAsn.org}
                             </span>
-                            <span className="text-[10px] text-[#E41919] font-bold">
+                            <span className="text-[10px] print:text-[8.5px] text-[#E41919] font-bold">
                               ({topAsn.percent.toFixed(1)}%)
                             </span>
                           </div>
@@ -858,6 +1579,68 @@ export default function ReportView({ interfaces }: Props) {
           </div>
         )}
       </div>
+
+      {/* ── Page 2: Macro Peering Sankey Flow Page ────────────────────────────── */}
+      {reportData && reportData.reports.length > 0 && (
+        <div
+          className={`report-sankey-page p-6 rounded-2xl border shadow-xl flex flex-col gap-4 ${
+            isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-[#161E2E] border-[#242E42] text-white'
+          }`}
+        >
+          {/* Page Header */}
+          <div className={`flex flex-col md:flex-row md:items-center justify-between gap-3 border-b pb-4 ${isLight ? 'border-slate-200' : 'border-[#242E42]'}`}>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#E41919]" />
+                <span className={`text-xs font-mono uppercase tracking-widest font-bold ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>
+                  Macro Peering Topology & Ingress Flow
+                </span>
+              </div>
+              <h2 className={`text-xl md:text-2xl font-bold tracking-tight m-0 ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                Inbound Peers → Local ISP Core → Outbound Peers
+              </h2>
+              <p className={`text-xs mt-1 mb-0 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
+                3-tier alluvial flow visualization mapping inbound origin peers through core ISP autonomous systems to outbound destination peers.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs font-mono">
+              <span className={`px-2.5 py-1 rounded-lg border ${isLight ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#0B0F17] border-[#242E42] text-slate-300'}`}>
+                Top Talkers Capped (6–8)
+              </span>
+              <span className={`px-2.5 py-1 rounded-lg border ${isLight ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-[#0B0F17] border-[#242E42] text-slate-300'}`}>
+                {reportData.reports.length} Monitored Links
+              </span>
+            </div>
+          </div>
+
+          {/* Sankey Flow Chart Panel */}
+          <div className={`sankey-panel p-4 rounded-xl border flex flex-col ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
+            {/* 3 Tier Column Headers */}
+            <div className="grid grid-cols-3 text-xs font-mono uppercase font-bold tracking-wider mb-2 px-2">
+              <div className={`flex items-center gap-2 ${isLight ? 'text-sky-700' : 'text-sky-400'}`}>
+                <span className="w-2 h-2 rounded-full bg-sky-400" />
+                <span>Inbound Origin Peers</span>
+              </div>
+              <div className={`flex items-center justify-center gap-2 text-[#E41919]`}>
+                <span className="w-2 h-2 rounded-full bg-[#E41919]" />
+                <span>Local ISP Core (VNT / Nomaden)</span>
+              </div>
+              <div className={`flex items-center justify-end gap-2 ${isLight ? 'text-amber-700' : 'text-[#FFCE00]'}`}>
+                <span>Outbound Destination Peers</span>
+                <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-amber-500' : 'bg-[#FFCE00]'}`} />
+              </div>
+            </div>
+
+            <div className="w-full h-[480px]">
+              <MacroPeeringSankeyChart
+                sankeyData={sankeyData}
+                theme={printTheme}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Pages 2+: Per-Interface Cards ────────────────────────────────────── */}
       {loading && !reportData ? (
@@ -876,13 +1659,13 @@ export default function ReportView({ interfaces }: Props) {
             return (
               <div
                 key={report.interface_name}
-                className={`report-card p-5 sm:p-6 print:p-4 rounded-2xl border shadow-xl flex flex-col gap-4 ${
+                className={`report-card p-4 sm:p-5 print:p-3 rounded-2xl border shadow-xl flex flex-col gap-3 print:gap-2 ${
                   isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-[#161E2E] border-[#242E42] text-white'
                 }`}
               >
                 {/* Interface Header */}
-                <div className={`flex flex-wrap items-center justify-between gap-3 border-b pb-3.5 ${isLight ? 'border-slate-200' : 'border-[#242E42]'}`}>
-                  <div className="flex items-center gap-3">
+                <div className={`flex flex-wrap items-center justify-between gap-2 border-b pb-2.5 print:pb-1.5 ${isLight ? 'border-slate-200' : 'border-[#242E42]'}`}>
+                  <div className="flex items-center gap-2.5">
                     <div
                       className={`w-3 h-3 rounded-full ${
                         isTransit
@@ -892,11 +1675,11 @@ export default function ReportView({ interfaces }: Props) {
                             : 'bg-[#FFCE00] shadow-sm shadow-[#FFCE00]'
                       }`}
                     />
-                    <h2 className={`text-lg md:text-xl font-mono font-bold tracking-tight m-0 ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                    <h2 className={`text-base md:text-lg font-mono font-bold tracking-tight m-0 ${isLight ? 'text-slate-900' : 'text-white'}`}>
                       {report.interface_name}
                     </h2>
                     <span
-                      className={`text-xs font-mono uppercase px-2.5 py-0.5 rounded-full font-bold tracking-wider ${
+                      className={`text-[11px] font-mono uppercase px-2 py-0.5 rounded-full font-bold tracking-wider ${
                         isTransit
                           ? isLight
                             ? 'bg-red-100 text-red-700 border border-red-300'
@@ -916,47 +1699,47 @@ export default function ReportView({ interfaces }: Props) {
                 </div>
 
                 {/* KPI Metrics Row */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 print:grid-cols-4 gap-3">
-                  <div className={`metric-box p-2.5 sm:p-3 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 print:grid-cols-4 gap-2.5 print:gap-2">
+                  <div className={`metric-box p-2 sm:p-2.5 print:p-1.5 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
                     <div className="flex items-center justify-between">
-                      <span className={`text-[11px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Peak Inbound</span>
-                      <span className="text-xs font-bold text-[#E41919]">↓ IN</span>
+                      <span className={`text-[10px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Peak Inbound</span>
+                      <span className="text-[11px] font-bold text-[#E41919]">↓ IN</span>
                     </div>
-                    <div className="text-base md:text-lg font-mono font-bold text-[#E41919] mt-1">
+                    <div className="text-sm md:text-base font-mono font-bold text-[#E41919] mt-0.5">
                       {formatMetric(report.summary.peak_inbound_bps, 'traffic')}
                     </div>
                   </div>
 
-                  <div className={`metric-box p-2.5 sm:p-3 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
+                  <div className={`metric-box p-2 sm:p-2.5 print:p-1.5 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
                     <div className="flex items-center justify-between">
-                      <span className={`text-[11px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Peak Outbound</span>
-                      <span className={`text-xs font-bold ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>↑ OUT</span>
+                      <span className={`text-[10px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Peak Outbound</span>
+                      <span className={`text-[11px] font-bold ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>↑ OUT</span>
                     </div>
-                    <div className={`text-base md:text-lg font-mono font-bold mt-1 ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>
+                    <div className={`text-sm md:text-base font-mono font-bold mt-0.5 ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>
                       {formatMetric(report.summary.peak_outbound_bps, 'traffic')}
                     </div>
                   </div>
 
-                  <div className={`metric-box p-2.5 sm:p-3 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
-                    <span className={`text-[11px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Average Inbound</span>
-                    <div className={`text-base md:text-lg font-mono font-bold mt-1 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
+                  <div className={`metric-box p-2 sm:p-2.5 print:p-1.5 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
+                    <span className={`text-[10px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Average Inbound</span>
+                    <div className={`text-sm md:text-base font-mono font-bold mt-0.5 ${isLight ? 'text-slate-800' : 'text-slate-100'}`}>
                       {formatMetric(report.summary.avg_inbound_bps, 'traffic')}
                     </div>
                   </div>
 
-                  <div className={`metric-box p-2.5 sm:p-3 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
-                    <span className={`text-[11px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Average Outbound</span>
-                    <div className={`text-base md:text-lg font-mono font-bold mt-1 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+                  <div className={`metric-box p-2 sm:p-2.5 print:p-1.5 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
+                    <span className={`text-[10px] font-mono ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Average Outbound</span>
+                    <div className={`text-sm md:text-base font-mono font-bold mt-0.5 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
                       {formatMetric(report.summary.avg_outbound_bps, 'traffic')}
                     </div>
                   </div>
                 </div>
 
-                {/* Split Layout: Left = ECharts Timeline (220px), Right = Top 10 ASNs Table */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 print:grid-cols-12 gap-4 items-stretch">
-                  {/* Left Column: Timeline */}
-                  <div className={`chart-panel lg:col-span-7 print:col-span-7 flex flex-col p-3.5 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
-                    <div className="flex items-center justify-between mb-2">
+                {/* Vertical Stack: 1st Timeline Card, 2nd Top 10 Talker ASN Table Card */}
+                <div className="flex flex-col gap-3 print:gap-2">
+                  {/* 1st: Full-width Timeline Card */}
+                  <div className={`chart-panel w-full flex flex-col p-3 print:p-2 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
+                    <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
                         <svg className={`w-4 h-4 ${isLight ? 'text-slate-500' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
@@ -966,24 +1749,24 @@ export default function ReportView({ interfaces }: Props) {
                         </span>
                       </div>
                       <div className="flex items-center gap-3 text-[10px] font-mono">
-                        <span className="flex items-center gap-1 text-[#E41919]">
+                        <span className="flex items-center gap-1 text-[#E41919] font-semibold">
                           <span className="w-2 h-2 rounded-full bg-[#E41919]" />
                           Inbound
                         </span>
-                        <span className={`flex items-center gap-1 ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>
+                        <span className={`flex items-center gap-1 font-semibold ${isLight ? 'text-amber-600' : 'text-[#FFCE00]'}`}>
                           <span className={`w-2 h-2 rounded-full ${isLight ? 'bg-amber-500' : 'bg-[#FFCE00]'}`} />
                           Outbound
                         </span>
                       </div>
                     </div>
-                    <div className="flex-1 flex items-center">
+                    <div className="w-full">
                       <InterfaceTimelineChart series={report.series} timeRange={timeRange} theme={printTheme} />
                     </div>
                   </div>
 
-                  {/* Right Column: Top 10 ASNs */}
-                  <div className={`asn-panel lg:col-span-5 print:col-span-5 flex flex-col p-3.5 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
-                    <div className="flex items-center justify-between mb-2">
+                  {/* 2nd: Full-width Top 10 Talker ASN Table Card below the graph */}
+                  <div className={`asn-panel w-full flex flex-col p-3 print:p-2 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'}`}>
+                    <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
                         <svg className={`w-4 h-4 ${isLight ? 'text-slate-500' : 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -995,18 +1778,18 @@ export default function ReportView({ interfaces }: Props) {
                       <span className={`text-[10px] font-mono ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>By Ingress Volume</span>
                     </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs font-mono border-collapse">
+                    <div className="overflow-x-auto min-w-0">
+                      <table className="w-full text-left text-xs font-mono print:text-[8.5px] print:font-mono border-collapse">
                         <thead>
-                          <tr className={`border-b text-[10px] uppercase ${isLight ? 'border-slate-300 text-slate-500' : 'border-[#242E42] text-slate-500'}`}>
-                            <th className="py-1 px-1.5 w-7 text-center">#</th>
-                            <th className="py-1 px-2">Source ASN & Org</th>
-                            <th className="py-1 px-2 text-right">Bitrate</th>
-                            <th className="py-1 px-2 text-right w-24">% Share</th>
+                          <tr className={`border-b text-[10px] print:text-[8px] uppercase tracking-wider font-semibold ${isLight ? 'border-slate-300 text-slate-500' : 'border-[#242E42] text-slate-400'}`}>
+                            <th className="py-1 px-2 print:px-1 print:py-0.5 w-7 text-center">#</th>
+                            <th className="py-1 px-3 print:px-1.5 print:py-0.5">Source ASN & Organization</th>
+                            <th className="py-1 px-3 print:px-1.5 print:py-0.5 text-right w-28 print:w-20">Bitrate</th>
+                            <th className="py-1 px-3 print:px-1.5 print:py-0.5 text-right w-44 print:w-32">% Share</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {report.top_asns.map((asn, idx) => (
+                          {report.top_asns.slice(0, 10).map((asn, idx) => (
                             <tr
                               key={asn.asn}
                               className={`asn-row border-b transition-colors ${
@@ -1015,7 +1798,7 @@ export default function ReportView({ interfaces }: Props) {
                                   : 'border-[#1E2838]/60 hover:bg-[#161E2E]/60'
                               }`}
                             >
-                              <td className={`py-1 px-1.5 text-center font-bold ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
+                              <td className={`py-1 print:py-0.5 px-2 print:px-1 text-center font-bold ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
                                 {idx === 0 ? (
                                   <span className={isLight ? 'text-amber-600' : 'text-[#FFCE00]'}>1</span>
                                 ) : idx === 1 ? (
@@ -1026,26 +1809,30 @@ export default function ReportView({ interfaces }: Props) {
                                   idx + 1
                                 )}
                               </td>
-                              <td className="py-1 px-2">
-                                <div className={`font-bold leading-tight ${isLight ? 'text-slate-900' : 'text-slate-100'}`}>
-                                  {asn.asn}
-                                </div>
-                                <div
-                                  className={`text-[10px] truncate max-w-[130px] sm:max-w-[180px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}
-                                  title={asn.org}
-                                >
-                                  {asn.org}
+                              <td className="py-1 print:py-0.5 px-3 print:px-1.5">
+                                <div className="flex items-center gap-2">
+                                  <span className={`font-bold ${isLight ? 'text-slate-900' : 'text-slate-100'}`}>
+                                    {asn.asn}
+                                  </span>
+                                  {asn.org && (
+                                    <span
+                                      className={`text-[11px] print:text-[8px] truncate max-w-[280px] print:max-w-[220px] sm:max-w-[440px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}
+                                      title={asn.org}
+                                    >
+                                      – {asn.org}
+                                    </span>
+                                  )}
                                 </div>
                               </td>
-                              <td className={`py-1 px-2 text-right font-bold whitespace-nowrap ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>
+                              <td className={`py-1 print:py-0.5 px-3 print:px-1.5 text-right font-bold whitespace-nowrap ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>
                                 {formatMetric(asn.bps, 'traffic')}
                               </td>
-                              <td className="py-1 px-2 text-right whitespace-nowrap">
-                                <div className="flex flex-col items-end">
-                                  <span className="text-[11px] font-bold text-[#E41919]">
+                              <td className="py-1 print:py-0.5 px-3 print:px-1.5 text-right whitespace-nowrap">
+                                <div className="flex items-center justify-end gap-3 print:gap-2">
+                                  <span className="text-[11px] print:text-[8px] font-bold text-[#E41919] w-12 print:w-9 text-right">
                                     {asn.percent.toFixed(1)}%
                                   </span>
-                                  <div className={`w-16 h-1 rounded-full overflow-hidden mt-0.5 ${isLight ? 'bg-slate-200' : 'bg-[#242E42]'}`}>
+                                  <div className={`w-28 print:w-20 h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-slate-200' : 'bg-[#242E42]'}`}>
                                     <div
                                       className="h-full bg-gradient-to-r from-[#E41919] to-[#FFCE00] rounded-full"
                                       style={{ width: `${Math.min(100, Math.max(3, asn.percent))}%` }}

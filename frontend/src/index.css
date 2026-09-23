@@ -213,6 +213,109 @@
   }
 }
 
+/* Global Light Mode Overrides */
+html.light body {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+}
+
+html.light .bg-\[\#161E2E\] {
+  background-color: #FFFFFF !important;
+}
+
+html.light .bg-\[\#161E2E\]\/90 {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+html.light .bg-\[\#161E2E\]\/95 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+html.light .bg-\[\#161E2E\]\/80 {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+}
+
+html.light .bg-\[\#0B0F17\] {
+  background-color: #F1F5F9 !important;
+}
+
+html.light .bg-\[\#0B0F17\]\/80 {
+  background-color: rgba(241, 245, 249, 0.85) !important;
+}
+
+html.light .bg-\[\#0B0F17\]\/90 {
+  background-color: rgba(241, 245, 249, 0.92) !important;
+}
+
+html.light .border-\[\#242E42\] {
+  border-color: #E2E8F0 !important;
+}
+
+html.light .border-\[\#242E42\]\/60,
+html.light .border-\[\#242E42\]\/80 {
+  border-color: #E2E8F0 !important;
+}
+
+html.light .border-\[\#1E2838\]\/60 {
+  border-color: #E2E8F0 !important;
+}
+
+html.light .text-white,
+html.light .text-slate-100,
+html.light .text-slate-200 {
+  color: #0F172A !important;
+}
+
+html.light .text-slate-300,
+html.light .text-slate-400 {
+  color: #475569 !important;
+}
+
+html.light .text-slate-500 {
+  color: #64748B !important;
+}
+
+/* Light mode high-contrast brand gold */
+html.light .text-\[\#FFCE00\] {
+  color: #D97706 !important;
+}
+
+html.light .bg-\[\#FFCE00\]\/15,
+html.light .bg-\[\#FFCE00\]\/20 {
+  background-color: rgba(217, 119, 6, 0.12) !important;
+}
+
+html.light .border-\[\#FFCE00\]\/30,
+html.light .border-\[\#FFCE00\]\/35 {
+  border-color: rgba(217, 119, 6, 0.35) !important;
+}
+
+html.light .search-input {
+  background: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+  color: #0F172A !important;
+}
+
+html.light .panel {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+}
+
+html.light .panel-inset {
+  background-color: #F1F5F9 !important;
+  border-color: #E2E8F0 !important;
+}
+
+html.light .btn-pill-ghost {
+  background-color: rgba(228, 25, 25, 0.06);
+  color: #334155;
+  border-color: #CBD5E1;
+}
+
+html.light .shadow-inner {
+  box-shadow: inset 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
 @media print {
   .no-print {
     display: none !important;

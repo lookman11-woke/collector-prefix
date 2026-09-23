@@ -14,6 +14,7 @@ import {
 type Props = {
   interfaces: Interface[]
   allPrefixes?: string[]
+  theme?: 'dark' | 'light'
 }
 
 const TOP_TALKER_CHIPS = [
@@ -65,7 +66,8 @@ function computeUnitScale(peakVal: number) {
   return { divisor: 1, unit: 'bps' }
 }
 
-export default function AsnExplorer({ interfaces, allPrefixes = [] }: Props) {
+export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dark' }: Props) {
+  const isLight = theme === 'light'
   const [selectedAsn, setSelectedAsn] = useState('AS15169')
   const [searchInput, setSearchInput] = useState('')
   const [timeRange, setTimeRange] = useState('1h')
@@ -210,7 +212,7 @@ export default function AsnExplorer({ interfaces, allPrefixes = [] }: Props) {
         top: 0,
         right: 12,
         textStyle: {
-          color: '#94A3B8',
+          color: isLight ? '#334155' : '#94A3B8',
           fontSize: 11,
           fontFamily: 'monospace',
         },
@@ -221,23 +223,23 @@ export default function AsnExplorer({ interfaces, allPrefixes = [] }: Props) {
       },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(22, 30, 46, 0.95)',
-        borderColor: '#242E42',
+        backgroundColor: isLight ? 'rgba(255, 255, 255, 0.98)' : 'rgba(22, 30, 46, 0.95)',
+        borderColor: isLight ? '#CBD5E1' : '#242E42',
         borderWidth: 1,
         padding: [10, 14],
         textStyle: {
-          color: '#F8FAFC',
+          color: isLight ? '#0F172A' : '#F8FAFC',
           fontSize: 12,
         },
         axisPointer: {
           type: 'cross',
           lineStyle: {
-            color: '#FFCE00',
+            color: isLight ? '#D97706' : '#FFCE00',
             type: 'dashed',
             width: 1,
           },
           crossStyle: {
-            color: '#FFCE00',
+            color: isLight ? '#D97706' : '#FFCE00',
           },
         },
         formatter: (params: any) => {
@@ -265,9 +267,9 @@ export default function AsnExplorer({ interfaces, allPrefixes = [] }: Props) {
 
           let html = `
             <div style="font-family: monospace; min-width: 240px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #242E42; padding-bottom: 6px; margin-bottom: 8px;">
-                <span style="color: #94A3B8; font-size: 11px;">${time}</span>
-                <span style="color: #FFCE00; font-weight: bold; font-size: 12px;">Total: ${formatBps(totalBps)}</span>
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid ${isLight ? '#E2E8F0' : '#242E42'}; padding-bottom: 6px; margin-bottom: 8px;">
+                <span style="color: ${isLight ? '#475569' : '#94A3B8'}; font-size: 11px;">${time}</span>
+                <span style="color: ${isLight ? '#D97706' : '#FFCE00'}; font-weight: bold; font-size: 12px;">Total: ${formatBps(totalBps)}</span>
               </div>
               <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
           `
@@ -275,23 +277,25 @@ export default function AsnExplorer({ interfaces, allPrefixes = [] }: Props) {
           items.forEach((item) => {
             const bps = item.val * scale.divisor
             const pct = totalScaled > 0 ? ((item.val / totalScaled) * 100).toFixed(1) : '0.0'
-            const badgeBg = item.isTransit ? 'rgba(228, 25, 25, 0.15)' : 'rgba(255, 206, 0, 0.15)'
-            const badgeText = item.isTransit ? '#FCA5A5' : '#FDE68A'
+            const badgeBg = item.isTransit
+              ? (isLight ? 'rgba(228, 25, 25, 0.1)' : 'rgba(228, 25, 25, 0.15)')
+              : (isLight ? 'rgba(217, 119, 6, 0.12)' : 'rgba(255, 206, 0, 0.15)')
+            const badgeText = item.isTransit ? (isLight ? '#DC2626' : '#FCA5A5') : (isLight ? '#B45309' : '#FDE68A')
             const badgeLabel = item.isTransit ? 'IPT' : 'IX'
 
             html += `
               <tr style="height: 22px;">
                 <td style="padding: 2px 4px 2px 0;">
                   <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${item.color}; margin-right: 6px;"></span>
-                  <span style="color: #E2E8F0; font-weight: 500;">${item.name}</span>
+                  <span style="color: ${isLight ? '#0F172A' : '#E2E8F0'}; font-weight: 500;">${item.name}</span>
                 </td>
                 <td style="padding: 2px 6px; text-align: center;">
                   <span style="background: ${badgeBg}; color: ${badgeText}; border-radius: 3px; padding: 1px 4px; font-size: 9px; font-weight: 600;">${badgeLabel}</span>
                 </td>
-                <td style="padding: 2px 0 2px 6px; text-align: right; color: #F8FAFC; font-weight: bold;">
+                <td style="padding: 2px 0 2px 6px; text-align: right; color: ${isLight ? '#0F172A' : '#F8FAFC'}; font-weight: bold;">
                   ${formatBps(bps)}
                 </td>
-                <td style="padding: 2px 0 2px 8px; text-align: right; color: #94A3B8; font-size: 10px;">
+                <td style="padding: 2px 0 2px 8px; text-align: right; color: ${isLight ? '#475569' : '#94A3B8'}; font-size: 10px;">
                   ${pct}%
                 </td>
               </tr>
@@ -306,10 +310,10 @@ export default function AsnExplorer({ interfaces, allPrefixes = [] }: Props) {
         type: 'category',
         boundaryGap: false,
         data: timeLabels,
-        axisLine: { lineStyle: { color: '#242E42' } },
+        axisLine: { lineStyle: { color: isLight ? '#CBD5E1' : '#242E42' } },
         axisTick: { show: false },
         axisLabel: {
-          color: '#64748B',
+          color: isLight ? '#475569' : '#64748B',
           fontSize: 10,
           fontFamily: 'monospace',
           margin: 12,
@@ -321,12 +325,12 @@ export default function AsnExplorer({ interfaces, allPrefixes = [] }: Props) {
         axisTick: { show: false },
         splitLine: {
           lineStyle: {
-            color: '#161E2E',
+            color: isLight ? '#E2E8F0' : '#161E2E',
             type: 'dashed',
           },
         },
         axisLabel: {
-          color: '#64748B',
+          color: isLight ? '#475569' : '#64748B',
           fontSize: 10,
           fontFamily: 'monospace',
           formatter: (v: number) => `${v} ${scale.unit}`,
@@ -334,7 +338,7 @@ export default function AsnExplorer({ interfaces, allPrefixes = [] }: Props) {
       },
       series: chartSeries,
     }
-  }, [data, seriesIfaces, scale, timeRange])
+  }, [data, seriesIfaces, scale, timeRange, isLight])
 
   const summary = data?.summary
   const totalBps = summary ? summary.total_bps : 0

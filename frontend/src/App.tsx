@@ -38,6 +38,20 @@ export default function App() {
   const [trafficData, setTrafficData] = useState<TrafficOverviewResponse | null>(null)
   const [asnData, setAsnData] = useState<AsnFlowResponse | null>(null)
   const [activeTab, setActiveTab] = useState<'overview' | 'asn-explorer' | 'reports'>('overview')
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('vnt_theme') as 'dark' | 'light') || 'dark'
+  })
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('light')
+      document.documentElement.classList.remove('dark')
+    } else {
+      document.documentElement.classList.remove('light')
+      document.documentElement.classList.add('dark')
+    }
+    localStorage.setItem('vnt_theme', theme)
+  }, [theme])
 
   // Filter state
   const [selectedAsns, setSelectedAsns] = useState<Set<string>>(new Set(MOCK_ASNS.map((a) => a.asn)))
@@ -243,9 +257,15 @@ export default function App() {
   const allCidrs = useMemo(() => flatCidrs(prefixGroups), [prefixGroups])
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#0B0F17] text-slate-100 antialiased selection:bg-[#E41919] selection:text-white">
+    <div className={`flex flex-col min-h-screen ${theme === 'light' ? 'bg-[#F8FAFC] text-slate-900' : 'bg-[#0B0F17] text-slate-100'} antialiased selection:bg-[#E41919] selection:text-white`}>
       {/* 1. Modernized Glass Header with Segmented Tab Switcher */}
-      <Header status={status} activeTab={activeTab} onTabChange={setActiveTab} />
+      <Header
+        status={status}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        theme={theme}
+        onThemeToggle={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+      />
 
       {activeTab === 'overview' ? (
         <>
@@ -294,6 +314,7 @@ export default function App() {
                 data={trafficData}
                 metric={metric}
                 timeRange={timeRange}
+                theme={theme}
               />
               <SankeyFlow
                 data={asnData}
@@ -301,17 +322,18 @@ export default function App() {
                 topN={sankeyTopN}
                 onTopNChange={setSankeyTopN}
                 onRefresh={loadData}
+                theme={theme}
               />
             </div>
           </main>
         </>
       ) : activeTab === 'asn-explorer' ? (
         <main className="flex-1 flex flex-col gap-4 p-4 md:p-6 max-w-[1600px] w-full mx-auto">
-          <AsnExplorer interfaces={interfaces} allPrefixes={allCidrs} />
+          <AsnExplorer interfaces={interfaces} allPrefixes={allCidrs} theme={theme} />
         </main>
       ) : (
         <main className="flex-1 flex flex-col gap-4 p-4 md:p-6 max-w-[1600px] w-full mx-auto">
-          <ReportView interfaces={interfaces} />
+          <ReportView interfaces={interfaces} theme={theme} onThemeChange={setTheme} />
         </main>
       )}
     </div>
