@@ -233,7 +233,42 @@ export default function SankeyFlow({
 
     const sorted = [...inboundNodes, ...localNodes, ...outboundNodes]
 
-    return { sortedNodes: sorted, filteredLinks: links }
+    // 6. Proportional Center-to-Outbound Normalization:
+    // In ISP networks, Inbound download volume is 8-10x higher than Outbound upload volume.
+    // Scale outbound links so they span the full height of the center local ASN card.
+    const localInflow = new Map<string, number>()
+    const localOutflow = new Map<string, number>()
+
+    links.forEach((l) => {
+      const srcTier = nodeTierMap.get(l.source)
+      const tgtTier = nodeTierMap.get(l.target)
+      if (srcTier === 0 && tgtTier === 1) {
+        localInflow.set(l.target, (localInflow.get(l.target) || 0) + l.value)
+      } else if (srcTier === 1 && tgtTier === 2) {
+        localOutflow.set(l.source, (localOutflow.get(l.source) || 0) + l.value)
+      }
+    })
+
+    const normalizedLinks = links.map((l) => {
+      const srcTier = nodeTierMap.get(l.source)
+      const tgtTier = nodeTierMap.get(l.target)
+      let linkVal = l.value
+      if (srcTier === 1 && tgtTier === 2 && (directionFilter === 'both' || !directionFilter)) {
+        const inTotal = localInflow.get(l.source) || 0
+        const outTotal = localOutflow.get(l.source) || 0
+        if (inTotal > 0 && outTotal > 0) {
+          linkVal = Math.round(l.value * (inTotal / outTotal))
+        }
+      }
+      return {
+        source: l.source,
+        target: l.target,
+        value: linkVal,
+        rawValue: l.value,
+      }
+    })
+
+    return { sortedNodes: sorted, filteredLinks: normalizedLinks }
   }, [rawNodes, rawLinks, directionFilter, localAsns])
 
   const hasData = sortedNodes.length > 0 && filteredLinks.length > 0
@@ -285,10 +320,11 @@ export default function SankeyFlow({
           if (params.dataType === 'edge') {
             const src = (params.data?.source || '').replace('\n', ' ')
             const tgt = (params.data?.target || '').replace('\n', ' ')
+            const displayVal = params.data?.rawValue ?? params.data?.value ?? 0
             return `
               <div style="font-size:12px; font-family:JetBrains Mono, monospace;">
                 <div style="color:${isLight ? '#475569' : '#64748B'}; margin-bottom:4px; font-size:11px;">${src} → ${tgt}</div>
-                <div style="color:${isLight ? '#D97706' : '#FFCE00'}; font-weight:700; font-size:13px;">${formatBps(params.data?.value || 0)}</div>
+                <div style="color:${isLight ? '#D97706' : '#FFCE00'}; font-weight:700; font-size:13px;">${formatBps(displayVal)}</div>
               </div>
             `
           }
@@ -354,6 +390,7 @@ export default function SankeyFlow({
               source: l.source,
               target: l.target,
               value: l.value,
+              rawValue: l.rawValue,
               lineStyle: {
                 color: srcColor,
                 opacity: isLight ? 0.45 : 0.38,

@@ -595,12 +595,43 @@ function MacroPeeringSankeyChart({
       })),
     ]
 
+    // 8. Proportional Center-to-Outbound Normalization:
+    // Scale outbound links departing local core so ribbons span 100% of the local ASN card height.
+    const nodeTierMap = new Map<string, number>()
+    finalInbound.forEach((n) => nodeTierMap.set(n.name, 0))
+    finalLocal.forEach((n) => nodeTierMap.set(n.name, 1))
+    finalOutbound.forEach((n) => nodeTierMap.set(n.name, 2))
+
+    const localInflow = new Map<string, number>()
+    const localOutflow = new Map<string, number>()
+
+    validLinks.forEach((l) => {
+      const srcTier = nodeTierMap.get(l.source)
+      const tgtTier = nodeTierMap.get(l.target)
+      if (srcTier === 0 && tgtTier === 1) {
+        localInflow.set(l.target, (localInflow.get(l.target) || 0) + l.value)
+      } else if (srcTier === 1 && tgtTier === 2) {
+        localOutflow.set(l.source, (localOutflow.get(l.source) || 0) + l.value)
+      }
+    })
+
     const echartsLinks = validLinks.map((l) => {
       const srcColor = nodeColorMap.get(l.source) || '#E41919'
+      const srcTier = nodeTierMap.get(l.source)
+      const tgtTier = nodeTierMap.get(l.target)
+      let linkVal = l.value
+      if (srcTier === 1 && tgtTier === 2) {
+        const inTotal = localInflow.get(l.source) || 0
+        const outTotal = localOutflow.get(l.source) || 0
+        if (inTotal > 0 && outTotal > 0) {
+          linkVal = Math.round(l.value * (inTotal / outTotal))
+        }
+      }
       return {
         source: l.source,
         target: l.target,
-        value: l.value,
+        value: linkVal,
+        rawValue: l.value,
         lineStyle: {
           color: srcColor,
           opacity: isLight ? 0.40 : 0.35,
@@ -643,7 +674,7 @@ function MacroPeeringSankeyChart({
           if (params.dataType === 'edge') {
             const src = (params.data?.source || '').replace('\n', ' ')
             const tgt = (params.data?.target || '').replace('\n', ' ')
-            const val = params.data?.value || 0
+            const val = params.data?.rawValue ?? params.data?.value ?? 0
             return `
               <div style="font-size:11px; font-family:JetBrains Mono, monospace;">
                 <div style="color:${isLight ? '#475569' : '#64748B'}; margin-bottom:4px;">${src} → ${tgt}</div>
