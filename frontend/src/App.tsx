@@ -180,27 +180,24 @@ export default function App() {
         })
       walk(group.tree)
 
+      const isCurrentlySelected = selectedAsns.has(asn)
       setSelectedAsns((prev) => {
         const next = new Set(prev)
-        if (next.has(asn)) {
-          next.delete(asn)
-          setSelectedPrefixes((pp) => {
-            const np = new Set(pp)
-            groupCidrs.forEach((c) => np.delete(c))
-            return np
-          })
+        if (isCurrentlySelected) next.delete(asn)
+        else next.add(asn)
+        return next
+      })
+      setSelectedPrefixes((prev) => {
+        const next = new Set(prev)
+        if (isCurrentlySelected) {
+          groupCidrs.forEach((c) => next.delete(c))
         } else {
-          next.add(asn)
-          setSelectedPrefixes((pp) => {
-            const np = new Set(pp)
-            groupCidrs.forEach((c) => np.add(c))
-            return np
-          })
+          groupCidrs.forEach((c) => next.add(c))
         }
         return next
       })
     },
-    [prefixGroups]
+    [prefixGroups, selectedAsns]
   )
 
   const handleTogglePrefix = useCallback((cidrOrList: string | string[]) => {

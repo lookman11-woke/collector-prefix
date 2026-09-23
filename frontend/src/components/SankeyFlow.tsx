@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { Component, useMemo, useState, type ErrorInfo, type ReactNode } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { formatBps } from '../data/mock'
-import type { AsnFlowResponse } from '../api/client'
+import type { AsnFlowResponse, SankeyNode } from '../api/client'
 
 type Props = {
   data: AsnFlowResponse | null
@@ -10,6 +10,43 @@ type Props = {
   onTopNChange: (n: number) => void
   onRefresh?: () => void
   theme?: 'dark' | 'light'
+}
+
+interface ErrorBoundaryProps {
+  children: ReactNode
+  fallback?: ReactNode
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean
+}
+
+class SankeyErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('SankeyFlow ErrorBoundary caught an error:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        this.props.fallback || (
+          <div className="w-full h-80 flex items-center justify-center text-slate-500 font-mono text-xs">
+            No valid flow linkages available for active filter set.
+          </div>
+        )
+      )
+    }
+    return this.props.children
+  }
 }
 
 const TOP_N_OPTIONS = [
@@ -73,43 +110,131 @@ export default function SankeyFlow({
   const rawNodes = useMemo(() => data?.nodes || [], [data])
   const rawLinks = useMemo(() => data?.links || [], [data])
 
-  // Filter links and nodes by direction
-  const { filteredNodes, filteredLinks } = useMemo(() => {
-    let links = rawLinks
-    if (directionFilter === 'inbound') {
-      links = rawLinks.filter((l) => {
-        const isTargetLocal = localAsns.includes(l.target)
-        return isTargetLocal
-      })
-    } else if (directionFilter === 'outbound') {
-      links = rawLinks.filter((l) => {
-        const isSourceLocal = localAsns.includes(l.source)
-        return isSourceLocal
-      })
-    }
+  // Strict 3-Tier Classification, Deduplication & Strict Forward-Only Link Filtering
+  const { sortedNodes, filteredLinks } = useMemo(() => {
+    // Helper to determine if an ASN or node is local
+    const isLocal = (name: string, tier?: string) =>
+      localAsns.includes(name) || tier === 'local'
 
-    const usedNodeNames = new Set<string>()
-    links.forEach((l) => {
-      usedNodeNames.add(l.source)
-      usedNodeNames.add(l.target)
+    // 1. Deduplicate raw nodes by name
+    const uniqueNodesMap = new Map<string, SankeyNode>()
+    rawNodes.forEach((node) => {
+      if (!node || !node.name) return
+      if (!uniqueNodesMap.has(node.name)) {
+        const isLoc = isLocal(node.name, node.tier)
+        uniqueNodesMap.set(node.name, {
+          ...node,
+          tier: isLoc ? 'local' : node.tier,
+        })
+      } else {
+        const existing = uniqueNodesMap.get(node.name)!
+        const isLoc = isLocal(node.name, node.tier) || isLocal(existing.name, existing.tier)
+        uniqueNodesMap.set(node.name, {
+          ...existing,
+          ...node,
+          tier: isLoc ? 'local' : (node.tier || existing.tier),
+          total: Math.max(existing.total || 0, node.total || 0),
+        })
+      }
     })
 
-    const nodes = rawNodes.filter((n) => usedNodeNames.has(n.name))
-    return { filteredNodes: nodes, filteredLinks: links }
+    // Ensure any endpoint in rawLinks exists in uniqueNodesMap
+    rawLinks.forEach((l) => {
+      if (l.source && !uniqueNodesMap.has(l.source)) {
+        const isLoc = isLocal(l.source)
+        uniqueNodesMap.set(l.source, {
+          name: l.source,
+          label: l.source.replace(' (In)', '').replace(' (Out)', ''),
+          tier: isLoc ? 'local' : 'inbound',
+        })
+      }
+      if (l.target && !uniqueNodesMap.has(l.target)) {
+        const isLoc = isLocal(l.target)
+        uniqueNodesMap.set(l.target, {
+          name: l.target,
+          label: l.target.replace(' (In)', '').replace(' (Out)', ''),
+          tier: isLoc ? 'local' : (l.target.includes('(Out)') ? 'outbound' : 'local'),
+        })
+      }
+    })
+
+    // 2. Create nodeTierMap: store depth (0 for inbound, 1 for local, 2 for outbound)
+    const nodeTierMap = new Map<string, number>()
+    uniqueNodesMap.forEach((node, name) => {
+      if (isLocal(name, node.tier)) {
+        nodeTierMap.set(name, 1)
+      } else if (node.tier === 'inbound') {
+        nodeTierMap.set(name, 0)
+      } else if (node.tier === 'outbound' || name.includes('(Out)')) {
+        nodeTierMap.set(name, 2)
+      } else {
+        nodeTierMap.set(name, 0)
+      }
+    })
+
+    // 3. Strict Forward-Only Link Filtering (Guarantees DAG - Zero Cycles)
+    const links = rawLinks.filter((l) => {
+      if (!l.source || !l.target) return false
+      // 1. No self loops
+      if (l.source === l.target) return false
+
+      const srcTier = nodeTierMap.get(l.source)
+      const tgtTier = nodeTierMap.get(l.target)
+
+      if (srcTier === undefined || tgtTier === undefined) return false
+
+      // 2. Strict forward flow: lower depth to strictly higher depth
+      // Drop any intra-tier links (e.g. Local -> Local, 1 < 1 is false) and backward links
+      if (srcTier >= tgtTier) return false
+
+      // Direction filter:
+      // Inbound: Tier 0 -> Tier 1 (Inbound Peer -> Local Core)
+      if (directionFilter === 'inbound' && !(srcTier === 0 && tgtTier === 1)) {
+        return false
+      }
+      // Outbound: Tier 1 -> Tier 2 (Local Core -> Outbound Destination)
+      if (directionFilter === 'outbound' && !(srcTier === 1 && tgtTier === 2)) {
+        return false
+      }
+
+      return true
+    })
+
+    // 4. Ensure only nodes that have connected links are passed into ECharts
+    const connectedNodeNames = new Set<string>()
+    links.forEach((l) => {
+      connectedNodeNames.add(l.source)
+      connectedNodeNames.add(l.target)
+    })
+
+    const filteredNodes = Array.from(connectedNodeNames)
+      .map((name) => uniqueNodesMap.get(name)!)
+      .filter(Boolean)
+
+    // 5. Strict 3-Tier Classification without duplicates
+    // Local nodes: filteredNodes.filter(n => isLocal(n.name)) (assigned depth = 1)
+    const localNodes = filteredNodes
+      .filter((n) => isLocal(n.name, n.tier))
+      .map((n) => ({ ...n, depth: 1, tier: 'local' as const }))
+
+    // Inbound nodes: filteredNodes.filter(n => n.tier === 'inbound' && !isLocal(n.name)) (assigned depth = 0)
+    const inboundNodes = filteredNodes
+      .filter((n) => !isLocal(n.name, n.tier) && (n.tier === 'inbound' || nodeTierMap.get(n.name) === 0))
+      .map((n) => ({ ...n, depth: 0, tier: 'inbound' as const }))
+
+    // Outbound nodes: filteredNodes.filter(n => n.tier === 'outbound' && !isLocal(n.name)) (assigned depth = 2)
+    const outboundNodes = filteredNodes
+      .filter((n) => !isLocal(n.name, n.tier) && (n.tier === 'outbound' || nodeTierMap.get(n.name) === 2))
+      .map((n) => ({ ...n, depth: 2, tier: 'outbound' as const }))
+
+    inboundNodes.sort((a, b) => (b.total || 0) - (a.total || 0))
+    localNodes.sort((a, b) => (b.total || 0) - (a.total || 0))
+    outboundNodes.sort((a, b) => (b.total || 0) - (a.total || 0))
+
+    const sorted = [...inboundNodes, ...localNodes, ...outboundNodes]
+
+    return { sortedNodes: sorted, filteredLinks: links }
   }, [rawNodes, rawLinks, directionFilter, localAsns])
-
-  // Sort nodes strictly descending by volume within each tier
-  const sortedNodes = useMemo(() => {
-    const inbound = filteredNodes.filter((n) => n.tier === 'inbound')
-    const local = filteredNodes.filter((n) => n.tier === 'local' || localAsns.includes(n.name))
-    const outbound = filteredNodes.filter((n) => n.tier === 'outbound' && !localAsns.includes(n.name))
-
-    inbound.sort((a, b) => (b.total || 0) - (a.total || 0))
-    local.sort((a, b) => (b.total || 0) - (a.total || 0))
-    outbound.sort((a, b) => (b.total || 0) - (a.total || 0))
-
-    return [...inbound, ...local, ...outbound]
-  }, [filteredNodes, localAsns])
 
   const hasData = sortedNodes.length > 0 && filteredLinks.length > 0
 
@@ -120,9 +245,9 @@ export default function SankeyFlow({
     let outIdx = 0
 
     sortedNodes.forEach((n) => {
-      if (n.tier === 'local' || localAsns.includes(n.name)) {
+      if (n.depth === 1 || n.tier === 'local') {
         map.set(n.name, LOCAL_ASN_COLORS[n.name] || '#E41919')
-      } else if (n.tier === 'inbound') {
+      } else if (n.depth === 0 || n.tier === 'inbound') {
         map.set(n.name, INBOUND_PALETTE[inIdx % INBOUND_PALETTE.length])
         inIdx++
       } else {
@@ -131,7 +256,7 @@ export default function SankeyFlow({
       }
     })
     return map
-  }, [sortedNodes, localAsns])
+  }, [sortedNodes])
 
   const option = useMemo(() => {
     if (!hasData) {
@@ -203,14 +328,6 @@ export default function SankeyFlow({
         {
           type: 'sankey',
           data: sortedNodes.map((n) => {
-            const isCenter = n.tier === 'local' || localAsns.includes(n.name)
-            const isSource = n.tier === 'inbound'
-
-            let depth = 1
-            if (isCenter) depth = 1
-            else if (isSource) depth = 0
-            else depth = 2
-
             let color = nodeColorMap.get(n.name) || '#E41919'
             if (isLight && n.name === 'AS149929') {
               color = '#D97706'
@@ -221,8 +338,8 @@ export default function SankeyFlow({
               label: n.label || n.name,
               org: n.org || '',
               total: n.total || 0,
-              tier: n.tier || (isCenter ? 'local' : isSource ? 'inbound' : 'outbound'),
-              depth,
+              tier: n.tier,
+              depth: n.depth,
               itemStyle: {
                 color,
                 borderColor: 'transparent',
@@ -268,7 +385,7 @@ export default function SankeyFlow({
         },
       ],
     }
-  }, [sortedNodes, filteredLinks, localAsns, nodeColorMap, hasData, isLight])
+  }, [sortedNodes, filteredLinks, nodeColorMap, hasData, isLight])
 
   return (
     <div className="bg-[#161E2E] border border-[#242E42] rounded-xl p-4 flex flex-col w-full">
@@ -349,16 +466,25 @@ export default function SankeyFlow({
       {/* Chart Viewport */}
       <div className="w-full h-80 sm:h-96 pt-2">
         {hasData ? (
-          <ReactECharts
-            option={option}
-            style={{ width: '100%', height: '100%' }}
-            opts={{ renderer: 'canvas' }}
-            notMerge={true}
-            lazyUpdate={true}
-          />
+          <SankeyErrorBoundary
+            key={`${directionFilter}-${localAsns.join(',')}-${topN}-${sortedNodes.length}-${filteredLinks.length}`}
+            fallback={
+              <div className="w-full h-80 flex items-center justify-center text-slate-500 font-mono text-xs">
+                No valid flow linkages available for active filter set.
+              </div>
+            }
+          >
+            <ReactECharts
+              option={option}
+              style={{ width: '100%', height: '100%' }}
+              opts={{ renderer: 'canvas' }}
+              notMerge={true}
+              lazyUpdate={true}
+            />
+          </SankeyErrorBoundary>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-500 font-mono text-xs">
-            No ASN matrix linkages available for active filter set.
+          <div className="w-full h-80 flex items-center justify-center text-slate-500 font-mono text-xs">
+            No valid flow linkages available for active filter set.
           </div>
         )}
       </div>
