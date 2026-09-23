@@ -385,15 +385,20 @@ export default function SankeyFlow({
             }
           }),
           links: filteredLinks.map((l) => {
-            const srcColor = nodeColorMap.get(l.source) || '#E41919'
+            const tgtNode = sortedNodes.find((n) => n.name === l.target)
+            const isOutbound = tgtNode?.depth === 2 || l.target.includes('(Out)')
+            const linkColor = isOutbound
+              ? (nodeColorMap.get(l.target) || '#FF7A00')
+              : (nodeColorMap.get(l.source) || '#E41919')
+
             return {
               source: l.source,
               target: l.target,
               value: l.value,
               rawValue: l.rawValue,
               lineStyle: {
-                color: srcColor,
-                opacity: isLight ? 0.45 : 0.38,
+                color: linkColor,
+                opacity: isLight ? 0.45 : 0.40,
                 curveness: 0.5,
               },
             }

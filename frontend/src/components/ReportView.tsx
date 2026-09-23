@@ -616,7 +616,6 @@ function MacroPeeringSankeyChart({
     })
 
     const echartsLinks = validLinks.map((l) => {
-      const srcColor = nodeColorMap.get(l.source) || '#E41919'
       const srcTier = nodeTierMap.get(l.source)
       const tgtTier = nodeTierMap.get(l.target)
       let linkVal = l.value
@@ -627,14 +626,19 @@ function MacroPeeringSankeyChart({
           linkVal = Math.round(l.value * (inTotal / outTotal))
         }
       }
+      const isOutbound = tgtTier === 2 || l.target.includes('(Out)')
+      const linkColor = isOutbound
+        ? (nodeColorMap.get(l.target) || '#FF7A00')
+        : (nodeColorMap.get(l.source) || '#E41919')
+
       return {
         source: l.source,
         target: l.target,
         value: linkVal,
         rawValue: l.value,
         lineStyle: {
-          color: srcColor,
-          opacity: isLight ? 0.40 : 0.35,
+          color: linkColor,
+          opacity: isLight ? 0.45 : 0.40,
           curveness: 0.5,
         },
       }
