@@ -3,6 +3,7 @@ import ReactECharts from 'echarts-for-react'
 import * as echarts from 'echarts'
 import {
   getAsnDetail,
+  getAsnFlow,
   type AsnDetailResponse,
   type Interface,
 } from '../api/client'
@@ -16,16 +17,6 @@ type Props = {
   allPrefixes?: string[]
   theme?: 'dark' | 'light'
 }
-
-const TOP_TALKER_CHIPS = [
-  { asn: 'AS15169', name: 'Google' },
-  { asn: 'AS32934', name: 'Meta' },
-  { asn: 'AS13335', name: 'Cloudflare' },
-  { asn: 'AS20940', name: 'Akamai' },
-  { asn: 'AS58389', name: 'PT Telkom' },
-  { asn: 'AS714', name: 'Apple' },
-  { asn: 'AS139057', name: 'Edgenext' },
-]
 
 const TIME_RANGES = ['15m', '1h', '6h', '24h', '7d']
 
@@ -74,6 +65,64 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
   const [data, setData] = useState<AsnDetailResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+
+  // Dynamic Top 10 Remote ASNs fallback
+  const defaultTopAsns = useMemo(() => {
+    return Object.entries(KNOWN_ASNS)
+      .slice(0, 10)
+      .map(([asn, name]) => ({ asn, name }))
+  }, [])
+
+  const [topRemoteAsns, setTopRemoteAsns] = useState<Array<{ asn: string; name: string }>>(defaultTopAsns)
+  const [flowLoading, setFlowLoading] = useState(false)
+
+  // Fetch dynamic top 10 remote ASNs via getAsnFlow
+  useEffect(() => {
+    let active = true
+    setFlowLoading(true)
+    getAsnFlow({
+      time_range: timeRange,
+      selected_asns: [],
+      selected_prefixes: [],
+      selected_interfaces: [],
+      top_n: 10,
+    })
+      .then((res) => {
+        if (!active) return
+        const inboundNodes = (res?.nodes || [])
+          .filter((n) => n.tier === 'inbound')
+          .sort((a, b) => (b.total ?? 0) - (a.total ?? 0))
+          .slice(0, 10)
+
+        if (inboundNodes.length > 0) {
+          setTopRemoteAsns(
+            inboundNodes.map((n) => ({
+              asn: n.name,
+              name: n.label || n.org || KNOWN_ASNS[n.name] || n.name,
+            }))
+          )
+        } else {
+          setTopRemoteAsns(defaultTopAsns)
+        }
+      })
+      .catch(() => {
+        if (active) setTopRemoteAsns(defaultTopAsns)
+      })
+      .finally(() => {
+        if (active) setFlowLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [timeRange, defaultTopAsns])
+
+  const displayedTopAsns =
+    flowLoading && topRemoteAsns.length === 0
+      ? defaultTopAsns
+      : topRemoteAsns.length > 0
+        ? topRemoteAsns
+        : defaultTopAsns
 
   // Fetch ASN details
   const fetchData = useCallback(() => {
@@ -140,11 +189,22 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
     return Array.from(set).sort()
   }, [data])
 
-  // Peak aggregate bitrate for chart scale
+  // Peak aggregate bitrate for chart scale (evaluating both inbound and outbound peaks)
   const peakVal = useMemo(() => {
     if (!data?.series || data.series.length === 0) return 0
-    return Math.max(...data.series.map((pt) => pt.total_bps))
-  }, [data])
+    let maxMagnitude = 0
+    data.series.forEach((pt) => {
+      let sumIn = 0
+      let sumOut = 0
+      seriesIfaces.forEach((iface) => {
+        sumIn += pt.interfaces_in?.[iface] ?? ((pt.interfaces[iface] || 0) * 0.8)
+        sumOut += pt.interfaces_out?.[iface] ?? ((pt.interfaces[iface] || 0) * 0.2)
+      })
+      if (sumIn > maxMagnitude) maxMagnitude = sumIn
+      if (sumOut > maxMagnitude) maxMagnitude = sumOut
+    })
+    return maxMagnitude || 1
+  }, [data, seriesIfaces])
 
   const scale = useMemo(() => computeUnitScale(peakVal), [peakVal])
 
@@ -165,13 +225,13 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     })
 
-    const chartSeries = seriesIfaces.map((iface) => {
+    const inSeries = seriesIfaces.map((iface, idx) => {
       const color = getInterfaceColor(iface)
       const isTransit = iface.startsWith('IPT')
       return {
         name: iface,
-        type: 'line',
-        stack: 'Total',
+        type: 'line' as const,
+        stack: 'Inbound',
         smooth: true,
         showSymbol: false,
         symbol: 'circle',
@@ -189,12 +249,70 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
             { offset: 1, color: hexToRgba(color, 0.04) },
           ]),
         },
+        markLine:
+          idx === 0
+            ? {
+                symbol: 'none',
+                silent: true,
+                data: [
+                  {
+                    yAxis: 0,
+                    lineStyle: {
+                      color: isLight ? '#94A3B8' : '#475569',
+                      width: 1.5,
+                      type: 'solid',
+                    },
+                    label: {
+                      show: true,
+                      formatter: '0',
+                      position: 'start',
+                      color: isLight ? '#64748B' : '#94A3B8',
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                    },
+                  },
+                ],
+              }
+            : undefined,
         data: data.series.map((pt) => {
-          const bps = pt.interfaces[iface] || 0
+          const bps = pt.interfaces_in?.[iface] ?? ((pt.interfaces[iface] || 0) * 0.8)
           return parseFloat((bps / scale.divisor).toFixed(2))
         }),
       }
     })
+
+    const outSeries = seriesIfaces.map((iface) => {
+      const color = getInterfaceColor(iface)
+      const isTransit = iface.startsWith('IPT')
+      return {
+        name: `${iface} (Out)`,
+        type: 'line' as const,
+        stack: 'Outbound',
+        smooth: true,
+        showSymbol: false,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: {
+          width: 1.5,
+          color: color,
+        },
+        itemStyle: {
+          color: color,
+        },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: hexToRgba(color, 0.02) },
+            { offset: 1, color: hexToRgba(color, isTransit ? 0.45 : 0.35) },
+          ]),
+        },
+        data: data.series.map((pt) => {
+          const bps = pt.interfaces_out?.[iface] ?? ((pt.interfaces[iface] || 0) * 0.2)
+          return -1 * parseFloat((bps / scale.divisor).toFixed(2))
+        }),
+      }
+    })
+
+    const chartSeries = [...inSeries, ...outSeries]
 
     return {
       backgroundColor: 'transparent',
@@ -204,7 +322,7 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
         top: 36,
         right: 20,
         bottom: 24,
-        left: 56,
+        left: 60,
         containLabel: false,
       },
       legend: {
@@ -245,64 +363,141 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
         formatter: (params: any) => {
           if (!Array.isArray(params) || params.length === 0) return ''
           const time = params[0].axisValueLabel
-          let totalScaled = 0
-          const items: { name: string; val: number; color: string; isTransit: boolean }[] = []
+          const inItems: { name: string; bps: number; color: string; isTransit: boolean }[] = []
+          const outItems: { name: string; bps: number; color: string; isTransit: boolean }[] = []
+
+          let totalInBps = 0
+          let totalOutBps = 0
 
           params.forEach((p: any) => {
-            const val = typeof p.value === 'number' ? p.value : 0
-            totalScaled += val
-            const isTransit = p.seriesName.startsWith('IPT')
-            items.push({
-              name: p.seriesName,
-              val,
-              color: p.color,
-              isTransit,
-            })
+            const rawVal = typeof p.value === 'number' ? p.value : 0
+            const absBps = Math.abs(rawVal) * scale.divisor
+            const isOut = p.seriesName.endsWith(' (Out)')
+            const cleanName = isOut ? p.seriesName.replace(' (Out)', '') : p.seriesName
+            const isTransit = cleanName.startsWith('IPT')
+
+            if (isOut) {
+              if (absBps > 0) {
+                totalOutBps += absBps
+                outItems.push({
+                  name: cleanName,
+                  bps: absBps,
+                  color: p.color,
+                  isTransit,
+                })
+              }
+            } else {
+              if (absBps > 0) {
+                totalInBps += absBps
+                inItems.push({
+                  name: cleanName,
+                  bps: absBps,
+                  color: p.color,
+                  isTransit,
+                })
+              }
+            }
           })
 
-          // Sort items descending by value
-          items.sort((a, b) => b.val - a.val)
+          inItems.sort((a, b) => b.bps - a.bps)
+          outItems.sort((a, b) => b.bps - a.bps)
 
-          const totalBps = totalScaled * scale.divisor
+          const grandTotalBps = totalInBps + totalOutBps
 
           let html = `
-            <div style="font-family: monospace; min-width: 240px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid ${isLight ? '#E2E8F0' : '#242E42'}; padding-bottom: 6px; margin-bottom: 8px;">
+            <div style="font-family: monospace; min-width: 270px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid ${isLight ? '#E2E8F0' : '#242E42'}; padding-bottom: 6px; margin-bottom: 6px;">
                 <span style="color: ${isLight ? '#475569' : '#94A3B8'}; font-size: 11px;">${time}</span>
-                <span style="color: ${isLight ? '#D97706' : '#FFCE00'}; font-weight: bold; font-size: 12px;">Total: ${formatBps(totalBps)}</span>
+                <span style="color: ${isLight ? '#D97706' : '#FFCE00'}; font-weight: bold; font-size: 12px;">Total: ${formatBps(grandTotalBps)}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; padding: 0 1px;">
+                <span style="color: #06B6D4; font-weight: 600;">Total In: ${formatBps(totalInBps)}</span>
+                <span style="color: #10B981; font-weight: 600;">Total Out: ${formatBps(totalOutBps)}</span>
+              </div>
+          `
+
+          // Inbound section
+          html += `
+            <div style="margin-bottom: 6px;">
+              <div style="color: #06B6D4; font-weight: bold; font-size: 10px; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.5px; display: flex; justify-content: space-between;">
+                <span>↓ Inbound (Ingress)</span>
+                <span>${formatBps(totalInBps)}</span>
               </div>
               <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
           `
+          if (inItems.length === 0) {
+            html += `<tr><td colspan="4" style="color: ${isLight ? '#94A3B8' : '#64748B'}; font-size: 10px; padding: 2px 0;">0 bps</td></tr>`
+          } else {
+            inItems.forEach((item) => {
+              const pct = totalInBps > 0 ? ((item.bps / totalInBps) * 100).toFixed(1) : '0.0'
+              const badgeBg = item.isTransit
+                ? (isLight ? 'rgba(228, 25, 25, 0.1)' : 'rgba(228, 25, 25, 0.15)')
+                : (isLight ? 'rgba(217, 119, 6, 0.12)' : 'rgba(255, 206, 0, 0.15)')
+              const badgeText = item.isTransit ? (isLight ? '#DC2626' : '#FCA5A5') : (isLight ? '#B45309' : '#FDE68A')
+              const badgeLabel = item.isTransit ? 'IPT' : 'IX'
 
-          items.forEach((item) => {
-            const bps = item.val * scale.divisor
-            const pct = totalScaled > 0 ? ((item.val / totalScaled) * 100).toFixed(1) : '0.0'
-            const badgeBg = item.isTransit
-              ? (isLight ? 'rgba(228, 25, 25, 0.1)' : 'rgba(228, 25, 25, 0.15)')
-              : (isLight ? 'rgba(217, 119, 6, 0.12)' : 'rgba(255, 206, 0, 0.15)')
-            const badgeText = item.isTransit ? (isLight ? '#DC2626' : '#FCA5A5') : (isLight ? '#B45309' : '#FDE68A')
-            const badgeLabel = item.isTransit ? 'IPT' : 'IX'
-
-            html += `
-              <tr style="height: 22px;">
-                <td style="padding: 2px 4px 2px 0;">
-                  <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${item.color}; margin-right: 6px;"></span>
-                  <span style="color: ${isLight ? '#0F172A' : '#E2E8F0'}; font-weight: 500;">${item.name}</span>
-                </td>
-                <td style="padding: 2px 6px; text-align: center;">
-                  <span style="background: ${badgeBg}; color: ${badgeText}; border-radius: 3px; padding: 1px 4px; font-size: 9px; font-weight: 600;">${badgeLabel}</span>
-                </td>
-                <td style="padding: 2px 0 2px 6px; text-align: right; color: ${isLight ? '#0F172A' : '#F8FAFC'}; font-weight: bold;">
-                  ${formatBps(bps)}
-                </td>
-                <td style="padding: 2px 0 2px 8px; text-align: right; color: ${isLight ? '#475569' : '#94A3B8'}; font-size: 10px;">
-                  ${pct}%
-                </td>
-              </tr>
-            `
-          })
-
+              html += `
+                <tr style="height: 20px;">
+                  <td style="padding: 2px 4px 2px 0;">
+                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${item.color}; margin-right: 6px;"></span>
+                    <span style="color: ${isLight ? '#0F172A' : '#E2E8F0'}; font-weight: 500;">${item.name}</span>
+                  </td>
+                  <td style="padding: 2px 6px; text-align: center;">
+                    <span style="background: ${badgeBg}; color: ${badgeText}; border-radius: 3px; padding: 1px 4px; font-size: 9px; font-weight: 600;">${badgeLabel}</span>
+                  </td>
+                  <td style="padding: 2px 0 2px 6px; text-align: right; color: ${isLight ? '#0F172A' : '#F8FAFC'}; font-weight: bold;">
+                    ${formatBps(item.bps)}
+                  </td>
+                  <td style="padding: 2px 0 2px 8px; text-align: right; color: ${isLight ? '#475569' : '#94A3B8'}; font-size: 10px;">
+                    ${pct}%
+                  </td>
+                </tr>
+              `
+            })
+          }
           html += `</table></div>`
+
+          // Outbound section
+          html += `
+            <div style="margin-top: 6px; border-top: 1px dashed ${isLight ? '#E2E8F0' : '#242E42'}; padding-top: 6px;">
+              <div style="color: #10B981; font-weight: bold; font-size: 10px; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.5px; display: flex; justify-content: space-between;">
+                <span>↑ Outbound (Egress)</span>
+                <span>${formatBps(totalOutBps)}</span>
+              </div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+          `
+          if (outItems.length === 0) {
+            html += `<tr><td colspan="4" style="color: ${isLight ? '#94A3B8' : '#64748B'}; font-size: 10px; padding: 2px 0;">0 bps</td></tr>`
+          } else {
+            outItems.forEach((item) => {
+              const pct = totalOutBps > 0 ? ((item.bps / totalOutBps) * 100).toFixed(1) : '0.0'
+              const badgeBg = item.isTransit
+                ? (isLight ? 'rgba(228, 25, 25, 0.1)' : 'rgba(228, 25, 25, 0.15)')
+                : (isLight ? 'rgba(217, 119, 6, 0.12)' : 'rgba(255, 206, 0, 0.15)')
+              const badgeText = item.isTransit ? (isLight ? '#DC2626' : '#FCA5A5') : (isLight ? '#B45309' : '#FDE68A')
+              const badgeLabel = item.isTransit ? 'IPT' : 'IX'
+
+              html += `
+                <tr style="height: 20px;">
+                  <td style="padding: 2px 4px 2px 0;">
+                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${item.color}; margin-right: 6px;"></span>
+                    <span style="color: ${isLight ? '#0F172A' : '#E2E8F0'}; font-weight: 500;">${item.name}</span>
+                  </td>
+                  <td style="padding: 2px 6px; text-align: center;">
+                    <span style="background: ${badgeBg}; color: ${badgeText}; border-radius: 3px; padding: 1px 4px; font-size: 9px; font-weight: 600;">${badgeLabel}</span>
+                  </td>
+                  <td style="padding: 2px 0 2px 6px; text-align: right; color: ${isLight ? '#0F172A' : '#F8FAFC'}; font-weight: bold;">
+                    ${formatBps(item.bps)}
+                  </td>
+                  <td style="padding: 2px 0 2px 8px; text-align: right; color: ${isLight ? '#475569' : '#94A3B8'}; font-size: 10px;">
+                    ${pct}%
+                  </td>
+                </tr>
+              `
+            })
+          }
+          html += `</table></div></div>`
+
           return html
         },
       },
@@ -310,7 +505,10 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
         type: 'category',
         boundaryGap: false,
         data: timeLabels,
-        axisLine: { lineStyle: { color: isLight ? '#CBD5E1' : '#242E42' } },
+        axisLine: {
+          onZero: false,
+          lineStyle: { color: isLight ? '#CBD5E1' : '#242E42' },
+        },
         axisTick: { show: false },
         axisLabel: {
           color: isLight ? '#475569' : '#64748B',
@@ -321,6 +519,14 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
       },
       yAxis: {
         type: 'value',
+        name: `${scale.unit} Inbound`,
+        nameTextStyle: {
+          color: isLight ? '#64748B' : '#94A3B8',
+          fontSize: 10,
+          fontFamily: 'monospace',
+          align: 'left',
+          padding: [0, 0, 4, -40],
+        },
         axisLine: { show: false },
         axisTick: { show: false },
         splitLine: {
@@ -333,7 +539,7 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
           color: isLight ? '#475569' : '#64748B',
           fontSize: 10,
           fontFamily: 'monospace',
-          formatter: (v: number) => `${v} ${scale.unit}`,
+          formatter: (v: number) => `${Math.abs(v)} ${scale.unit}`,
         },
       },
       series: chartSeries,
@@ -352,137 +558,150 @@ export default function AsnExplorer({ interfaces, allPrefixes = [], theme = 'dar
   return (
     <div className="flex flex-col gap-4 w-full">
       {/* 1. Target ASN Selector & Telemetry Command Bar */}
-      <div className="p-4 rounded-xl bg-[#161E2E] border border-[#242E42] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Left: Search input & Active Target */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-1">
-          <div className="relative w-full sm:w-80">
-            <form onSubmit={handleSearchSubmit} className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <input
-                type="text"
-                value={searchInput}
-                onChange={(e) => {
-                  setSearchInput(e.target.value)
-                  setIsDropdownOpen(true)
-                }}
-                onFocus={() => setIsDropdownOpen(true)}
-                placeholder="Search ASN or Org (e.g. 15169, Meta)..."
-                className="w-full pl-9 pr-8 py-2 bg-[#0B0F17] border border-[#242E42] rounded-lg text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#E41919] transition-colors"
-              />
-              {searchInput && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchInput('')
-                    setIsDropdownOpen(false)
-                  }}
-                  className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-500 hover:text-slate-300"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+      <div className="p-4 rounded-xl bg-[#161E2E] border border-[#242E42] shadow-sm flex flex-col">
+        {/* Top: Search, Target chip, Time range, and Refresh */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Left: Search input & Active Target */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-1">
+            <div className="relative w-full sm:w-80">
+              <form onSubmit={handleSearchSubmit} className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                </button>
-              )}
-            </form>
-
-            {/* Autocomplete dropdown */}
-            {isDropdownOpen && searchSuggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-[#161E2E] border border-[#242E42] rounded-lg shadow-xl overflow-hidden max-h-60 overflow-y-auto">
-                {searchSuggestions.map(([asn, org]) => (
+                </div>
+                <input
+                  type="text"
+                  value={searchInput}
+                  onChange={(e) => {
+                    setSearchInput(e.target.value)
+                    setIsDropdownOpen(true)
+                  }}
+                  onFocus={() => setIsDropdownOpen(true)}
+                  placeholder="Search ASN or Org (e.g. 15169, Meta)..."
+                  className="w-full pl-9 pr-8 py-2 bg-[#0B0F17] border border-[#242E42] rounded-lg text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:border-[#E41919] transition-colors"
+                />
+                {searchInput && (
                   <button
-                    key={asn}
                     type="button"
-                    onClick={() => handleSelectAsn(asn)}
-                    className="w-full px-3 py-2 text-left flex items-center justify-between hover:bg-[#242E42]/60 transition-colors border-b border-[#242E42]/40 last:border-0"
+                    onClick={() => {
+                      setSearchInput('')
+                      setIsDropdownOpen(false)
+                    }}
+                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-500 hover:text-slate-300"
                   >
-                    <span className="font-mono text-xs font-bold text-[#FFCE00]">{asn}</span>
-                    <span className="text-xs text-slate-300 truncate max-w-[180px]">{org}</span>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
-                ))}
-              </div>
-            )}
+                )}
+              </form>
+
+              {/* Autocomplete dropdown */}
+              {isDropdownOpen && searchSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-[#161E2E] border border-[#242E42] rounded-lg shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                  {searchSuggestions.map(([asn, org]) => (
+                    <button
+                      key={asn}
+                      type="button"
+                      onClick={() => handleSelectAsn(asn)}
+                      className="w-full px-3 py-2 text-left flex items-center justify-between hover:bg-[#242E42]/60 transition-colors border-b border-[#242E42]/40 last:border-0"
+                    >
+                      <span className="font-mono text-xs font-bold text-[#FFCE00]">{asn}</span>
+                      <span className="text-xs text-slate-300 truncate max-w-[180px]">{org}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Current Target Chip */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0B0F17] border border-[#E41919]/40 rounded-lg">
+              <span className="w-2 h-2 rounded-full bg-[#E41919] animate-pulse"></span>
+              <span className="font-mono text-xs font-bold text-white">{data?.asn || selectedAsn}</span>
+              <span className="text-slate-500 text-xs">·</span>
+              <span className="text-xs font-medium text-slate-200 truncate max-w-[220px]">
+                {data?.org || KNOWN_ASNS[selectedAsn] || 'Autonomous System'}
+              </span>
+            </div>
           </div>
 
-          {/* Current Target Chip */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0B0F17] border border-[#E41919]/40 rounded-lg">
-            <span className="w-2 h-2 rounded-full bg-[#E41919] animate-pulse"></span>
-            <span className="font-mono text-xs font-bold text-white">{data?.asn || selectedAsn}</span>
-            <span className="text-slate-500 text-xs">·</span>
-            <span className="text-xs font-medium text-slate-200 truncate max-w-[220px]">
-              {data?.org || KNOWN_ASNS[selectedAsn] || 'Autonomous System'}
-            </span>
+          {/* Right: Time Range & Refresh Button */}
+          <div className="flex items-center gap-3">
+            {/* Time range picker */}
+            <div className="flex items-center bg-[#0B0F17] p-1 rounded-lg border border-[#242E42]">
+              {TIME_RANGES.map((tr) => (
+                <button
+                  key={tr}
+                  type="button"
+                  onClick={() => setTimeRange(tr)}
+                  className={`px-2.5 py-1 text-xs font-mono rounded transition-colors ${
+                    timeRange === tr
+                      ? 'bg-[#E41919] text-white font-bold shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {tr}
+                </button>
+              ))}
+            </div>
+
+            {/* Refresh button */}
+            <button
+              type="button"
+              onClick={fetchData}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0B0F17] hover:bg-[#242E42] border border-[#242E42] rounded-lg text-xs font-mono text-slate-200 transition-colors disabled:opacity-50"
+              title="Reload ASN Telemetry"
+            >
+              <svg
+                className={`w-3.5 h-3.5 text-[#FFCE00] ${loading ? 'animate-spin' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
           </div>
         </div>
 
-        {/* Right: Time Range & Refresh Button */}
-        <div className="flex items-center gap-3">
-          {/* Time range picker */}
-          <div className="flex items-center bg-[#0B0F17] p-1 rounded-lg border border-[#242E42]">
-            {TIME_RANGES.map((tr) => (
+        {/* Dynamic Top 10 Remote ASNs (5-5 Grid Below Search Bar) */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-3 pt-3 border-t border-[#242E42]/60">
+          {displayedTopAsns.slice(0, 10).map((chip, idx) => {
+            const isCurrent = (data?.asn || selectedAsn) === chip.asn
+            return (
               <button
-                key={tr}
+                key={chip.asn}
                 type="button"
-                onClick={() => setTimeRange(tr)}
-                className={`px-2.5 py-1 text-xs font-mono rounded transition-colors ${
-                  timeRange === tr
-                    ? 'bg-[#E41919] text-white font-bold shadow'
-                    : 'text-slate-400 hover:text-slate-200'
+                onClick={() => handleSelectAsn(chip.asn)}
+                title={`${chip.asn} - ${chip.name}`}
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all border text-left ${
+                  isCurrent
+                    ? 'bg-[#E41919] text-white border-[#E41919] font-bold shadow-md shadow-[#E41919]/20'
+                    : 'bg-[#0B0F17] text-slate-300 border-[#242E42] hover:border-slate-500 hover:text-white hover:bg-[#1a2333]'
                 }`}
               >
-                {tr}
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-tight shrink-0 ${
+                    isCurrent
+                      ? 'bg-black/30 text-white'
+                      : 'bg-[#242E42] text-slate-400'
+                  }`}
+                >
+                  #{idx + 1}
+                </span>
+                <span className={`shrink-0 ${isCurrent ? 'text-white font-bold' : 'text-[#FFCE00] font-semibold'}`}>
+                  {chip.asn}
+                </span>
+                <span className={`truncate text-[11px] ${isCurrent ? 'text-white/90' : 'text-slate-400'}`}>
+                  {chip.name}
+                </span>
               </button>
-            ))}
-          </div>
-
-          {/* Refresh button */}
-          <button
-            type="button"
-            onClick={fetchData}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0B0F17] hover:bg-[#242E42] border border-[#242E42] rounded-lg text-xs font-mono text-slate-200 transition-colors disabled:opacity-50"
-            title="Reload ASN Telemetry"
-          >
-            <svg
-              className={`w-3.5 h-3.5 text-[#FFCE00] ${loading ? 'animate-spin' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
+            )
+          })}
         </div>
-      </div>
-
-      {/* Quick Filter Chips */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar">
-        <span className="text-slate-400 font-mono text-[11px] uppercase tracking-wider shrink-0 mr-1">
-          Top Remote ASNs:
-        </span>
-        {TOP_TALKER_CHIPS.map((chip) => {
-          const isCurrent = (data?.asn || selectedAsn) === chip.asn
-          return (
-            <button
-              key={chip.asn}
-              type="button"
-              onClick={() => handleSelectAsn(chip.asn)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono shrink-0 transition-all border ${
-                isCurrent
-                  ? 'bg-[#E41919] text-white border-[#E41919] font-bold shadow-md shadow-[#E41919]/20'
-                  : 'bg-[#161E2E] text-slate-300 border-[#242E42] hover:border-slate-500 hover:text-white'
-              }`}
-            >
-              <span className={isCurrent ? 'text-white' : 'text-[#FFCE00]'}>{chip.asn}</span>
-              <span className="text-slate-400">·</span>
-              <span>{chip.name}</span>
-            </button>
-          )
-        })}
       </div>
 
       {/* 2. Selected ASN Summary Ribbon */}

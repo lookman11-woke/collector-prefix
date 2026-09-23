@@ -324,6 +324,8 @@ export type AsnDetailSummary = {
 export type AsnDetailPoint = {
   timestamp: string
   interfaces: Record<string, number>
+  interfaces_in?: Record<string, number>
+  interfaces_out?: Record<string, number>
   total_bps: number
 }
 
@@ -432,13 +434,19 @@ export function getMockAsnDetail(
     const currentTotal = Math.max(2_000_000, Math.round(baseBandwidth * (1 + wave + jitter)))
 
     const ptIfaces: Record<string, number> = {}
+    const ptIfacesIn: Record<string, number> = {}
+    const ptIfacesOut: Record<string, number> = {}
 
     // Distribute among Transit
     const transitPool = currentTotal * transitRatio
     transitIfaces.forEach((ti, iIdx) => {
       const weight = (iIdx + 1) / Math.max(1, transitIfaces.length)
       const val = Math.round((transitPool / transitIfaces.length) * (0.85 + 0.3 * (weight - 0.5)))
+      const inVal = Math.round(val * 0.82)
+      const outVal = val - inVal
       ptIfaces[ti.id] = val
+      ptIfacesIn[ti.id] = inVal
+      ptIfacesOut[ti.id] = outVal
       ifaceTotals[ti.id] = (ifaceTotals[ti.id] || 0) + val
     })
 
@@ -447,7 +455,11 @@ export function getMockAsnDetail(
     ixIfaces.forEach((ii, iIdx) => {
       const weight = (iIdx + 1) / Math.max(1, ixIfaces.length)
       const val = Math.round((ixPool / ixIfaces.length) * (0.85 + 0.3 * (weight - 0.5)))
+      const inVal = Math.round(val * 0.82)
+      const outVal = val - inVal
       ptIfaces[ii.id] = val
+      ptIfacesIn[ii.id] = inVal
+      ptIfacesOut[ii.id] = outVal
       ifaceTotals[ii.id] = (ifaceTotals[ii.id] || 0) + val
     })
 
@@ -462,6 +474,8 @@ export function getMockAsnDetail(
     series.push({
       timestamp: t.toISOString(),
       interfaces: ptIfaces,
+      interfaces_in: ptIfacesIn,
+      interfaces_out: ptIfacesOut,
       total_bps: ptTotal,
     })
   }

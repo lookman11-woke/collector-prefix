@@ -777,9 +777,11 @@ type asnDetailSummary struct {
 }
 
 type asnDetailPoint struct {
-	Timestamp  string           `json:"timestamp"`
-	Interfaces map[string]int64 `json:"interfaces"`
-	TotalBps   int64            `json:"total_bps"`
+	Timestamp     string           `json:"timestamp"`
+	Interfaces    map[string]int64 `json:"interfaces"`
+	InterfacesIn  map[string]int64 `json:"interfaces_in,omitempty"`
+	InterfacesOut map[string]int64 `json:"interfaces_out,omitempty"`
+	TotalBps      int64            `json:"total_bps"`
 }
 
 type asnSubnetImpact struct {
@@ -873,10 +875,12 @@ ORDER BY bucket ASC
 	defer rows.Close()
 
 	type bucketData struct {
-		interfaces map[string]int64
-		inBps      int64
-		outBps     int64
-		totalBps   int64
+		interfaces    map[string]int64
+		interfacesIn  map[string]int64
+		interfacesOut map[string]int64
+		inBps         int64
+		outBps        int64
+		totalBps      int64
 	}
 	bucketOrder := []time.Time{}
 	bucketMap := make(map[time.Time]*bucketData)
@@ -893,12 +897,18 @@ ORDER BY bucket ASC
 		activeIfacesMap[iface] = true
 		b, exists := bucketMap[bucket]
 		if !exists {
-			b = &bucketData{interfaces: make(map[string]int64)}
+			b = &bucketData{
+				interfaces:    make(map[string]int64),
+				interfacesIn:  make(map[string]int64),
+				interfacesOut: make(map[string]int64),
+			}
 			bucketMap[bucket] = b
 			bucketOrder = append(bucketOrder, bucket)
 		}
 		ifaceBps := int64(inBps + outBps)
 		b.interfaces[iface] += ifaceBps
+		b.interfacesIn[iface] += int64(inBps)
+		b.interfacesOut[iface] += int64(outBps)
 		b.inBps += int64(inBps)
 		b.outBps += int64(outBps)
 		b.totalBps += ifaceBps
@@ -921,9 +931,11 @@ ORDER BY bucket ASC
 			peakOut = b.outBps
 		}
 		series = append(series, asnDetailPoint{
-			Timestamp:  t.Format(time.RFC3339),
-			Interfaces: b.interfaces,
-			TotalBps:   b.totalBps,
+			Timestamp:     t.Format(time.RFC3339),
+			Interfaces:    b.interfaces,
+			InterfacesIn:  b.interfacesIn,
+			InterfacesOut: b.interfacesOut,
+			TotalBps:      b.totalBps,
 		})
 	}
 
