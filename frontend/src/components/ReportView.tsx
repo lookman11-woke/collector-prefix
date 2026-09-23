@@ -627,9 +627,9 @@ function MacroPeeringSankeyChart({
         }
       }
       const isOutbound = tgtTier === 2 || l.target.includes('(Out)')
-      const linkColor = isOutbound
-        ? (nodeColorMap.get(l.target) || '#FF7A00')
-        : (nodeColorMap.get(l.source) || '#E41919')
+      const ribbonColor = isOutbound
+        ? (isLight ? '#D97706' : '#FFCE00')
+        : (isLight ? '#DC2626' : '#E41919')
 
       return {
         source: l.source,
@@ -637,8 +637,8 @@ function MacroPeeringSankeyChart({
         value: linkVal,
         rawValue: l.value,
         lineStyle: {
-          color: linkColor,
-          opacity: isLight ? 0.45 : 0.40,
+          color: ribbonColor,
+          opacity: isLight ? 0.42 : 0.38,
           curveness: 0.5,
         },
       }
