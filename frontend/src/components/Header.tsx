@@ -42,18 +42,13 @@ export default function Header({
     >
       {/* Brand Identity & Title */}
       <div className="flex items-center gap-3">
-        <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${isLight ? 'bg-[#F1F5F9] border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'} border shadow-inner`}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="2" y="2" width="9" height="9" rx="2" fill="#E41919" />
-            <rect x="13" y="2" width="9" height="9" rx="2" fill="#FFCE00" />
-            <rect x="2" y="13" width="9" height="9" rx="2" fill="#FFCE00" opacity="0.8" />
-            <rect x="13" y="13" width="9" height="9" rx="2" fill="#E41919" opacity="0.6" />
-          </svg>
+        <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${isLight ? 'bg-white border-slate-200' : 'bg-[#0B0F17] border-[#242E42]'} border shadow-inner p-1`}>
+          <img src="/favicon.png" alt="VNT Logo" className="w-5 h-5 object-contain rounded-sm" />
         </div>
         <div>
           <div className="flex items-center gap-2">
             <span className={`font-bold text-sm tracking-tight ${isLight ? 'text-slate-900' : 'text-white'}`}>
-              VNT Observability Studio
+              VNT Upstream Overview
             </span>
             <span className={`font-mono text-[10px] font-semibold px-2 py-0.5 rounded-full ${isLight ? 'bg-red-50 text-red-700 border-red-200' : 'bg-[#E41919]/15 text-[#FCA5A5] border-[#E41919]/30'} border`}>
               {version}
